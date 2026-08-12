@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>救護耗材智慧管理系統 - EMS Inventory & Expiry Manager</title>
+  
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
+  
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  
+  <!-- SheetJS for Excel Import/Export -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <!-- Chart.js for Dashboard Analytics -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- Custom Stylesheet -->
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body class="theme-dark">
+  <!-- Main Container Layout -->
+  <div class="app-layout">
+
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="logo-icon">
+          <i data-lucide="ambulance"></i>
+        </div>
+        <div class="logo-text">
+          <h2>救護耗材智慧管理</h2>
+          <span class="version-tag">v2.4 EMS Pro</span>
+        </div>
+      </div>
+
+      <!-- Current Active User Switcher Widget (RBAC Quick Test) -->
+      <div class="user-profile-card">
+        <div class="avatar" id="currentUserAvatar">官</div>
+        <div class="user-info">
+          <div class="user-name" id="currentUserName">張小明隊員</div>
+          <div class="user-role-badge" id="currentUserRoleBadge">最高管理員</div>
+        </div>
+        <div class="user-switch-btn" title="切換測試身分" onclick="openUserSwitchModal()">
+          <i data-lucide="arrows-right-left"></i>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <div class="nav-section-label">核心模組</div>
+        <button class="nav-item active" data-tab="tab-dashboard" onclick="switchTab('tab-dashboard')">
+          <i data-lucide="layout-dashboard"></i>
+          <span>總覽儀表板</span>
+          <span class="nav-badge alert-badge" id="expiredCountBadge">0</span>
+        </button>
+
+        <button class="nav-item" data-tab="tab-inventory" onclick="switchTab('tab-inventory')">
+          <i data-lucide="package-search"></i>
+          <span>耗材庫存清冊</span>
+        </button>
+
+        <button class="nav-item" data-tab="tab-locations" onclick="switchTab('tab-locations')">
+          <i data-lucide="truck"></i>
+          <span>救護車輛與分區</span>
+        </button>
+
+        <div class="nav-section-label">管理與通知</div>
+        <button class="nav-item" data-tab="tab-reminders" onclick="switchTab('tab-reminders')">
+          <i data-lucide="bell-ring"></i>
+          <span>效期提醒與寄信</span>
+        </button>
+
+        <button class="nav-item" data-tab="tab-users" onclick="switchTab('tab-users')">
+          <i data-lucide="users"></i>
+          <span>人員與權限管理</span>
+        </button>
+
+        <button class="nav-item" data-tab="tab-audit" onclick="switchTab('tab-audit')">
+          <i data-lucide="history"></i>
+          <span>異動與領用日誌</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <button class="btn-theme-toggle" onclick="toggleTheme()" title="切換深淺模式">
+          <i data-lucide="moon" id="themeIcon"></i>
+          <span id="themeLabel">深色模式</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <!-- Top Banner Bar -->
+      <header class="top-header">
+        <div class="header-title">
+          <h1 id="pageTitle">總覽儀表板</h1>
+          <p id="pageSubtitle" class="text-subtitle">救護耗材數量監控、即期警示與急救包備品統計</p>
+        </div>
+
+        <div class="header-actions">
+          <!-- Quick Status Indicator -->
+          <div class="system-status-pill success" id="notificationStatusPill" onclick="switchTab('tab-reminders')">
+            <i data-lucide="mail-check"></i>
+            <span>自動寄信服務運作中</span>
+          </div>
+
+          <!-- Quick Action Buttons -->
+          <button class="btn btn-secondary rbac-import" onclick="openExcelImportModal()">
+            <i data-lucide="file-up"></i> Excel 匯入
+          </button>
+          
+          <button class="btn btn-secondary rbac-export" onclick="exportInventoryExcel()">
+            <i data-lucide="file-down"></i> 匯出 Excel
+          </button>
+
+          <button class="btn btn-primary rbac-add" onclick="openSupplyModal()">
+            <i data-lucide="plus-circle"></i> 新增耗材
+          </button>
+        </div>
+      </header>
+
+      <!-- Content Views -->
+
+      <!-- 1. TAB: DASHBOARD -->
+      <section id="tab-dashboard" class="tab-content active">
+        <!-- Stat Cards Grid -->
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-icon blue">
+              <i data-lucide="boxes"></i>
+            </div>
+            <div class="stat-info">
+              <div class="stat-label">耗材品項總計</div>
+              <div class="stat-value" id="statTotalItems">0</div>
+              <div class="stat-sub">涵蓋 <span id="statTotalCategories">0</span> 大類別急救物資</div>
+            </div>
+          </div>
+
+          <div class="stat-card danger" onclick="filterInventoryByStatus('expired')">
+            <div class="stat-icon red pulse">
+              <i data-lucide="alert-octagon"></i>
+            </div>
+            <div class="stat-info">
+              <div class="stat-label">已過期耗材</div>
+              <div class="stat-value text-danger" id="statExpiredItems">0</div>
+              <div class="stat-sub text-danger">須立即下架更換</div>
+            </div>
+          </div>
+
+          <div class="stat-card warning" onclick="filterInventoryByStatus('expiring')">
+            <div class="stat-icon amber">
+              <i data-lucide="clock-alert"></i>
+            </div>
+            <div class="stat-info">
+              <div class="stat-label">即期耗材 (<span id="statThresholdDays">30</span>天內)</div>
+              <div class="stat-value text-warning" id="statExpiringItems">0</div>
+              <div class="stat-sub">已自動納入寄信提醒清冊</div>
+            </div>
+          </div>
+
+          <div class="stat-card" onclick="filterInventoryByStatus('low_stock')">
+            <div class="stat-icon purple">
+              <i data-lucide="battery-warning"></i>
+            </div>
+            <div class="stat-info">
+              <div class="stat-label">庫存告急品項</div>
+              <div class="stat-value text-purple" id="statLowStockItems">0</div>
+              <div class="stat-sub">低於安全預警數量</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Dashboard Charts & Alert Lists Grid -->
+        <div class="dashboard-panels">
+          <!-- Left: Expiry Alert Panel -->
+          <div class="panel card">
+            <div class="panel-header">
+              <div class="panel-title">
+                <i data-lucide="siren" class="text-danger"></i>
+                <h3>即期與過期急救耗材監控</h3>
+              </div>
+              <button class="btn btn-sm btn-ghost" onclick="switchTab('tab-inventory')">查看全部 ></button>
+            </div>
+            <div class="panel-body p-0">
+              <div class="table-responsive">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>耗材名稱與批號</th>
+                      <th>放置位置</th>
+                      <th>剩餘效期</th>
+                      <th>數量</th>
+                      <th>狀態</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody id="dashboardAlertsTable">
+                    <!-- Dynamic Rows -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: Visual Charts -->
+          <div class="panel card">
+            <div class="panel-header">
+              <div class="panel-title">
+                <i data-lucide="pie-chart" class="text-accent"></i>
+                <h3>耗材類別與效期健康度</h3>
+              </div>
+            </div>
+            <div class="panel-body chart-container">
+              <canvas id="categoryHealthChart"></canvas>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. TAB: INVENTORY LIST (WITH BATCH CHECKBOXES & LOCATION TRANSFER) -->
+      <section id="tab-inventory" class="tab-content">
+        <!-- Filter and Search Toolbar -->
+        <div class="toolbar-card card">
+          <div class="search-box">
+            <i data-lucide="search"></i>
+            <input type="text" id="inventorySearchInput" placeholder="搜尋耗材名稱、批號、備註或規格..." oninput="renderInventoryTable()">
+          </div>
+
+          <div class="filter-group">
+            <select id="filterCategory" class="form-control" onchange="renderInventoryTable()">
+              <option value="ALL">所有類別 (全部)</option>
+              <option value="呼吸道急救">呼吸道急救</option>
+              <option value="創傷止血包紮">創傷止血包紮</option>
+              <option value="靜脈與給藥">靜脈與給藥</option>
+              <option value="車載防護消毒">車載防護消毒</option>
+              <option value="診斷與檢測">診斷與檢測</option>
+            </select>
+
+            <select id="filterLocation" class="form-control" onchange="renderInventoryTable()">
+              <!-- Dynamic Options loaded by JS -->
+            </select>
+
+            <select id="filterStatus" class="form-control" onchange="renderInventoryTable()">
+              <option value="ALL">所有效期狀態</option>
+              <option value="expired">已過期 (Expired)</option>
+              <option value="expiring">即期 (Expiring Soon)</option>
+              <option value="safe">效期正常 (Safe)</option>
+              <option value="low_stock">數量偏低 (Low Stock)</option>
+            </select>
+
+            <button class="btn btn-ghost" title="重置篩選" onclick="resetInventoryFilters()">
+              <i data-lucide="rotate-ccw"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Main Table Card with Checkboxes -->
+        <div class="card p-0 mt-3">
+          <div class="table-responsive">
+            <table class="table hover-table">
+              <thead>
+                <tr>
+                  <th style="width: 40px; text-align: center;">
+                    <input type="checkbox" id="selectAllCheckbox" title="全選/全不選" onchange="toggleSelectAllInventory(this)">
+                  </th>
+                  <th onclick="sortInventory('name')">耗材名稱 / 規格 <i data-lucide="arrow-up-down" class="sort-icon"></i></th>
+                  <th>類別</th>
+                  <th>批號</th>
+                  <th onclick="sortInventory('expiry')">到期日期 <i data-lucide="arrow-up-down" class="sort-icon"></i></th>
+                  <th>放置位置</th>
+                  <th onclick="sortInventory('quantity')">現有數量 / 安全量 <i data-lucide="arrow-up-down" class="sort-icon"></i></th>
+                  <th>狀態標籤</th>
+                  <th class="text-right">功能操作</th>
+                </tr>
+              </thead>
+              <tbody id="inventoryTableBody">
+                <!-- Dynamic Rows -->
+              </tbody>
+            </table>
+          </div>
+          <div class="table-footer">
+            <div class="table-info" id="inventoryTableSummary">顯示 0 筆耗材資料</div>
+            <div class="table-actions">
+              <!-- Batch Location Transfer Button -->
+              <button class="btn btn-sm btn-accent rbac-add" id="btnBatchTransfer" style="display: none;" onclick="openBatchTransferModal()">
+                <i data-lucide="arrow-right-left"></i> 批量轉移庫位 (<span id="selectedTransferCount">0</span> 筆)
+              </button>
+
+              <!-- Batch Delete Button -->
+              <button class="btn btn-sm btn-danger rbac-add" id="btnBatchDelete" style="display: none;" onclick="confirmBatchDeleteSupplies()">
+                <i data-lucide="trash-2"></i> 批量刪除 (已選 <span id="selectedCount">0</span> 筆)
+              </button>
+
+              <button class="btn btn-sm btn-secondary rbac-add" onclick="downloadTemplateExcel()">
+                <i data-lucide="file-spreadsheet"></i> 下載 Excel 範本
+              </button>
+              <button class="btn btn-sm btn-secondary rbac-add" onclick="downloadTemplateCSV()">
+                <i data-lucide="file-text"></i> 下載 CSV 範本
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. TAB: VEHICLES & LOCATIONS -->
+      <section id="tab-locations" class="tab-content">
+        <!-- Top Toolbar with Add Location Button -->
+        <div class="card toolbar-card mb-3">
+          <div>
+            <h3><i data-lucide="truck" class="text-primary"></i> 救護車輛與分區配置管理</h3>
+            <p class="text-subtitle">自主新增或移除車輛主包、備包與庫房分區庫位</p>
+          </div>
+          <button class="btn btn-primary rbac-add" onclick="openLocationModal()">
+            <i data-lucide="plus-circle"></i> 新增車輛 / 庫位
+          </button>
+        </div>
+
+        <div class="locations-grid" id="locationCardsContainer">
+          <!-- Dynamic Ambulance & Storage Location Cards -->
+        </div>
+      </section>
+
+      <!-- 4. TAB: EXPIRY REMINDERS & EMAIL SETTINGS -->
+      <section id="tab-reminders" class="tab-content">
+        <div class="grid-2col">
+          <!-- Left: Reminder Settings Form -->
+          <div class="card">
+            <div class="card-header">
+              <div class="panel-title">
+                <i data-lucide="sliders" class="text-primary"></i>
+                <h3>自動寄信與提醒規則設定</h3>
+              </div>
+              <div class="badge badge-info">自主編輯</div>
+            </div>
+
+            <form id="reminderSettingsForm" onsubmit="saveReminderSettings(event)">
+              <div class="form-group">
+                <label class="form-label">提醒觸發機制</label>
+                <div class="toggle-wrapper">
+                  <input type="checkbox" id="reminderEnabled" class="toggle-checkbox">
+                  <label for="reminderEnabled" class="toggle-label"></label>
+                  <span class="toggle-text">開啟自動寄信與即期提醒功能</span>
+                </div>
+              </div>
+
+              <hr class="divider">
+
+              <!-- 提醒區間設定 -->
+              <div class="form-group">
+                <label class="form-label">
+                  <i data-lucide="calendar"></i> 到期前提醒區間 (可多選 / 自訂天數)
+                </label>
+                <div class="checkbox-options-grid">
+                  <label class="checkbox-btn">
+                    <input type="checkbox" name="reminderInterval" value="1"> 1 天前 (緊急)
+                  </label>
+                  <label class="checkbox-btn">
+                    <input type="checkbox" name="reminderInterval" value="7"> 7 天前 (1週)
+                  </label>
+                  <label class="checkbox-btn">
+                    <input type="checkbox" name="reminderInterval" value="14"> 14 天前 (2週)
+                  </label>
+                  <label class="checkbox-btn">
+                    <input type="checkbox" name="reminderInterval" value="30"> 30 天前 (1個月)
+                  </label>
+                  <label class="checkbox-btn">
+                    <input type="checkbox" name="reminderInterval" value="60"> 60 天前 (2個月)
+                  </label>
+                  <label class="checkbox-btn">
+                    <input type="checkbox" name="reminderInterval" value="90"> 90 天前 (3個月)
+                  </label>
+                </div>
+                <div class="form-hint mt-2">勾選之區間內有即將到期耗材時，系統將匯整清單發送提醒信。</div>
+              </div>
+
+              <!-- 提醒頻率與時間 -->
+              <div class="grid-2col gap-3">
+                <div class="form-group">
+                  <label class="form-label" for="reminderFrequency"><i data-lucide="repeat"></i> 寄信頻率</label>
+                  <select id="reminderFrequency" class="form-control">
+                    <option value="daily">每日發送 (Daily)</option>
+                    <option value="weekly_mon">每週一彙整發送 (Weekly)</option>
+                    <option value="monthly_1st">每月 1 日彙整發送 (Monthly)</option>
+                  </select>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label" for="reminderTime"><i data-lucide="clock"></i> 每日預定通知時間</label>
+                  <input type="time" id="reminderTime" class="form-control" value="08:00">
+                </div>
+              </div>
+
+              <!-- 通知收件對象選擇 -->
+              <div class="form-group">
+                <label class="form-label"><i data-lucide="mail-plus"></i> 通知的收件管理人員</label>
+                <div id="reminderRecipientsList" class="recipients-selector">
+                  <!-- Dynamically Rendered Checkboxes of Admin Users -->
+                </div>
+              </div>
+
+              <!-- EmailJS / Webhook Integration -->
+              <div class="card sub-card mt-3">
+                <div class="sub-card-header">
+                  <i data-lucide="send" class="text-accent"></i>
+                  <strong>實體 EmailJS 寄信服務設定 (選填)</strong>
+                </div>
+                <p class="form-hint">未設定 Service Key 時，系統將使用「內建模擬寄信與即時郵件日誌」運作。</p>
+                <div class="grid-2col gap-2 mt-2">
+                  <input type="text" id="emailjsServiceId" class="form-control" placeholder="EmailJS Service ID">
+                  <input type="text" id="emailjsTemplateId" class="form-control" placeholder="Template ID">
+                </div>
+                <input type="text" id="emailjsPublicKey" class="form-control mt-2" placeholder="Public API Key">
+              </div>
+
+              <div class="form-actions mt-4">
+                <button type="submit" class="btn btn-primary rbac-config">
+                  <i data-lucide="save"></i> 儲存提醒設定
+                </button>
+
+                <button type="button" class="btn btn-accent" onclick="triggerImmediateEmailDispatch()">
+                  <i data-lucide="send"></i> 立即發送測試提醒信
+                </button>
+              </div>
+            </form>
+          </div>
+
+          <!-- Right: Outbox Log & Email Simulator View -->
+          <div class="card">
+            <div class="card-header">
+              <div class="panel-title">
+                <i data-lucide="inbox" class="text-purple"></i>
+                <h3>寄信日誌與模擬郵件預覽</h3>
+              </div>
+              <button class="btn btn-sm btn-ghost" onclick="clearOutboxLogs()">清空紀錄</button>
+            </div>
+            
+            <div class="outbox-list" id="outboxLogList">
+              <!-- Dynamic Sent Emails -->
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5. TAB: USER RBAC MANAGEMENT -->
+      <section id="tab-users" class="tab-content">
+        <div class="card">
+          <div class="card-header">
+            <div class="panel-title">
+              <i data-lucide="user-cog" class="text-primary"></i>
+              <h3>管理人員名單與權限發放</h3>
+            </div>
+            <button class="btn btn-primary rbac-manage-users" onclick="openUserEditModal()">
+              <i data-lucide="user-plus"></i> 新增管理人員
+            </button>
+          </div>
+
+          <div class="table-responsive mt-3">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>人員姓名</th>
+                  <th>電子郵件 (Email)</th>
+                  <th>所屬單位 / 隊別</th>
+                  <th>系統權限角色</th>
+                  <th>權限說明</th>
+                  <th class="text-right">管理操作</th>
+                </tr>
+              </thead>
+              <tbody id="userTableBody">
+                <!-- Dynamic User Rows -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- 6. TAB: AUDIT LOGS -->
+      <section id="tab-audit" class="tab-content">
+        <div class="card">
+          <div class="card-header">
+            <div class="panel-title">
+              <i data-lucide="scroll-text" class="text-primary"></i>
+              <h3>系統操作與耗材領用履歷 (Audit Log)</h3>
+            </div>
+            <button class="btn btn-sm btn-ghost" onclick="clearAuditLogs()">清空履歷</button>
+          </div>
+          <div class="table-responsive mt-3">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>時間戳記</th>
+                  <th>操作人員</th>
+                  <th>動作類型</th>
+                  <th>對象品項 / 備註</th>
+                  <th>數量異動</th>
+                </tr>
+              </thead>
+              <tbody id="auditTableBody">
+                <!-- Dynamic Audit Rows -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- MODALS -->
+
+  <!-- 1. Add / Edit Supply Modal -->
+  <div class="modal-backdrop" id="supplyModal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 id="supplyModalTitle">新增救護耗材</h3>
+        <button class="btn-close" onclick="closeModal('supplyModal')">&times;</button>
+      </div>
+      <form id="supplyForm" onsubmit="saveSupply(event)">
+        <div class="modal-body">
+          <input type="hidden" id="supplyId">
+          
+          <div class="form-group">
+            <label class="form-label" for="supplyName">耗材名稱 <span class="text-danger">* (必填)</span></label>
+            <input type="text" id="supplyName" class="form-control" placeholder="例: 靜脈留置針 20G / 生理食鹽水 500ml" required>
+          </div>
+
+          <div class="grid-2col gap-2">
+            <div class="form-group">
+              <label class="form-label" for="supplyExpiry">有效期限 / 到期日 <span class="text-danger">* (必填)</span></label>
+              <input type="date" id="supplyExpiry" class="form-control" required>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="supplyQuantity">現有數量 <span class="text-danger">* (必填)</span></label>
+              <input type="number" id="supplyQuantity" class="form-control" min="0" required>
+            </div>
+          </div>
+
+          <hr class="divider mb-3">
+          <div class="text-subtitle mb-2" style="font-size:0.8rem;"><i data-lucide="sliders"></i> 以下為選填項目 (若留空將由系統自動預設)</div>
+
+          <div class="grid-2col gap-2">
+            <div class="form-group">
+              <label class="form-label" for="supplyCategory">耗材分類 (選填)</label>
+              <select id="supplyCategory" class="form-control">
+                <option value="呼吸道急救">呼吸道急救</option>
+                <option value="創傷止血包紮">創傷止血包紮</option>
+                <option value="靜脈與給藥">靜脈與給藥</option>
+                <option value="車載防護消毒">車載防護消毒</option>
+                <option value="診斷與檢測">診斷與檢測</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="supplyBatch">批號 / Lot No. (選填)</label>
+              <input type="text" id="supplyBatch" class="form-control" placeholder="例: LOT-20260415-B">
+            </div>
+          </div>
+
+          <div class="grid-3col gap-2">
+            <div class="form-group">
+              <label class="form-label" for="supplyLocation">放置位置 (選填)</label>
+              <select id="supplyLocation" class="form-control">
+                <!-- Dynamic Options Loaded by JS -->
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="supplyMinStock">安全警戒線 (選填)</label>
+              <input type="number" id="supplyMinStock" class="form-control" min="1" value="5">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="supplyUnit">單位 (選填)</label>
+              <input type="text" id="supplyUnit" class="form-control" placeholder="例: 包 / 支 / 盒 / 個" value="個">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="supplyNotes">備註說明 (選填)</label>
+            <textarea id="supplyNotes" class="form-control" rows="2" placeholder="填寫特殊保存條件或警示說明..."></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('supplyModal')">取消</button>
+          <button type="submit" class="btn btn-primary">儲存耗材資料</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 2. Transfer Location Modal (SINGLE / BATCH TRANSFER) -->
+  <div class="modal-backdrop" id="transferModal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 id="transferModalTitle"><i data-lucide="arrow-right-left" class="text-primary"></i> 庫位耗材轉移</h3>
+        <button class="btn-close" onclick="closeModal('transferModal')">&times;</button>
+      </div>
+      <form id="transferForm" onsubmit="executeTransferSubmit(event)">
+        <div class="modal-body">
+          <input type="hidden" id="transferSupplyId">
+          <input type="hidden" id="transferIsBatch" value="false">
+
+          <div class="card sub-card mb-3" id="transferSourceInfoCard">
+            <div class="text-subtitle">原存放區 (來源)</div>
+            <h4 id="transferSourceItemName" style="font-size: 1.05rem; font-weight: 700;">靜脈留置針 20G</h4>
+            <div class="flex items-center gap-2 mt-1">
+              <span class="badge badge-info" id="transferSourceLocation">1樓小倉</span>
+              <span class="text-subtitle">現有數量: <strong id="transferSourceMaxQty">12</strong> <span id="transferSourceUnit">支</span></span>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="transferTargetLocation">目標存放區 / 目的地 <span class="text-danger">*</span></label>
+            <select id="transferTargetLocation" class="form-control" required>
+              <!-- Dynamic Options -->
+            </select>
+          </div>
+
+          <!-- Single Item Quantity Range / Input Section -->
+          <div id="transferSingleQtySection">
+            <div class="form-group">
+              <label class="form-label" for="transferQtyInput">轉移數量 <span class="text-danger">*</span></label>
+              <div class="flex items-center gap-2">
+                <input type="number" id="transferQtyInput" class="form-control" min="1" value="1" required oninput="updateTransferQtyModeLabel()">
+                <button type="button" class="btn btn-sm btn-ghost" onclick="setTransferMaxQty()">全移</button>
+              </div>
+              <div class="form-hint mt-1" id="transferQtyHint">已選擇全部轉移 (原庫位將清空並變更至新庫位)</div>
+            </div>
+          </div>
+
+          <div id="transferBatchMsgSection" style="display: none;" class="alert-hint">
+            <p class="text-subtitle"><i data-lucide="info"></i> 將把已勾選的 <strong><span id="transferBatchCountText">0</span> 筆</strong> 耗材全部轉移至所選的目標庫位。</p>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('transferModal')">取消</button>
+          <button type="submit" class="btn btn-primary">確認執行轉移</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 3. Add Location / Vehicle Modal -->
+  <div class="modal-backdrop" id="locationModal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3>新增救護車輛與分區庫位</h3>
+        <button class="btn-close" onclick="closeModal('locationModal')">&times;</button>
+      </div>
+      <form id="locationForm" onsubmit="saveLocationForm(event)">
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label" for="locTitle">車輛 / 庫位名稱 <span class="text-danger">*</span></label>
+            <input type="text" id="locTitle" class="form-control" placeholder="例: 3號救護車 - 產婦包 / 2樓大倉" required>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="locIcon">圖示類型</label>
+            <select id="locIcon" class="form-control">
+              <option value="ambulance">🚑 救護車 (Ambulance)</option>
+              <option value="briefcase-medical">💼 急救包 (Medical Bag)</option>
+              <option value="warehouse">🏢 倉庫 (Warehouse)</option>
+              <option value="box">📦 備品箱 (Box)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="locDesc">用途與說明</label>
+            <input type="text" id="locDesc" class="form-control" placeholder="例: 專責婦幼創傷急救裝備存放區">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('locationModal')">取消</button>
+          <button type="submit" class="btn btn-primary">確認新增庫位</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 4. Excel Import & Sample Download Modal -->
+  <div class="modal-backdrop" id="excelImportModal">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-header">
+        <h3>Excel / CSV 批次匯入救護耗材</h3>
+        <button class="btn-close" onclick="closeModal('excelImportModal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        
+        <!-- Template Download Section -->
+        <div class="card sub-card mb-3">
+          <div class="flex items-center justify-between flex-wrap gap-2">
+            <div>
+              <h4 style="font-size: 0.95rem; font-weight: 700;"><i data-lucide="file-spreadsheet" class="text-primary"></i> 匯入欄位規範 (僅 3 項為必填，位置留空預設為「2樓大倉」)</h4>
+              <p class="text-subtitle" style="font-size: 0.8rem;">下載範例檔，或將現有 Excel/CSV 對照下列標題匯入：</p>
+            </div>
+            <div class="flex gap-2">
+              <button class="btn btn-sm btn-secondary" onclick="downloadTemplateExcel()">
+                <i data-lucide="download"></i> 下載 Excel 範本 (.xlsx)
+              </button>
+              <button class="btn btn-sm btn-secondary" onclick="downloadTemplateCSV()">
+                <i data-lucide="download"></i> 下載 CSV 範本 (.csv)
+              </button>
+            </div>
+          </div>
+
+          <!-- Field Spec Preview Guide -->
+          <div class="table-responsive mt-2">
+            <table class="table table-sm text-subtitle" style="font-size:0.75rem;">
+              <thead>
+                <tr>
+                  <th>標題欄位名稱</th>
+                  <th>範例資料內容</th>
+                  <th>必填 / 選填</th>
+                  <th>說明與預設邏輯</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="table-active">
+                  <td><code>耗材名稱*</code></td>
+                  <td>靜脈留置針 22G</td>
+                  <td><span class="badge badge-danger">必填</span></td>
+                  <td>衛材品項名稱或規格</td>
+                </tr>
+                <tr class="table-active">
+                  <td><code>有效期限(YYYY-MM-DD)*</code></td>
+                  <td>2026-11-30</td>
+                  <td><span class="badge badge-danger">必填</span></td>
+                  <td>格式為 YYYY-MM-DD (例如 2026-11-30)</td>
+                </tr>
+                <tr class="table-active">
+                  <td><code>現有數量*</code></td>
+                  <td>25</td>
+                  <td><span class="badge badge-danger">必填</span></td>
+                  <td>阿拉伯數字 (正整數)</td>
+                </tr>
+                <tr>
+                  <td><code>放置位置</code></td>
+                  <td>1號救護車-主包</td>
+                  <td><span class="badge badge-info">選填</span></td>
+                  <td><strong>留空將自動預設為「2樓大倉」</strong></td>
+                </tr>
+                <tr>
+                  <td><code>耗材類別</code></td>
+                  <td>靜脈與給藥</td>
+                  <td><span class="badge badge-info">選填</span></td>
+                  <td>留空預設為「呼吸道急救」</td>
+                </tr>
+                <tr>
+                  <td><code>批號</code></td>
+                  <td>LOT-2026-V1</td>
+                  <td><span class="badge badge-info">選填</span></td>
+                  <td>留空預設為「無」</td>
+                </tr>
+                <tr>
+                  <td><code>安全警戒數量</code></td>
+                  <td>10</td>
+                  <td><span class="badge badge-info">選填</span></td>
+                  <td>留空預設為 5</td>
+                </tr>
+                <tr>
+                  <td><code>單位</code></td>
+                  <td>支</td>
+                  <td><span class="badge badge-info">選填</span></td>
+                  <td>留空預設為「個」</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="drop-zone" id="dropZone" onclick="document.getElementById('excelFileInput').click()">
+          <i data-lucide="cloud-upload" class="drop-icon"></i>
+          <h4>點擊或拖曳 Excel/CSV 檔案至此處上傳</h4>
+          <p>上傳後將自動進行數據校驗與欄位與格式對應預覽</p>
+          <input type="file" id="excelFileInput" accept=".xlsx, .xls, .csv" style="display: none;" onchange="handleExcelFileSelect(event)">
+        </div>
+
+        <!-- Excel Preview Table Container -->
+        <div id="excelPreviewSection" style="display: none;" class="mt-4">
+          <div class="preview-header">
+            <h4><i data-lucide="table"></i> 匯入預覽與資料檢核 (<span id="excelRecordCount">0</span> 筆)</h4>
+            <div id="excelValidationStatus"></div>
+          </div>
+          <div class="table-responsive max-h-300">
+            <table class="table table-sm">
+              <thead>
+                <tr>
+                  <th>耗材名稱*</th>
+                  <th>到期日*</th>
+                  <th>數量*</th>
+                  <th>類別 (選填)</th>
+                  <th>批號 (選填)</th>
+                  <th>位置 (選填)</th>
+                  <th>檢核狀態</th>
+                </tr>
+              </thead>
+              <tbody id="excelPreviewTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('excelImportModal')">取消</button>
+        <button class="btn btn-primary" id="btnConfirmImport" disabled onclick="confirmImportExcel()">確認併入庫存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. User RBAC Edit Modal -->
+  <div class="modal-backdrop" id="userEditModal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 id="userModalTitle">新增管理人員與分配權限</h3>
+        <button class="btn-close" onclick="closeModal('userEditModal')">&times;</button>
+      </div>
+      <form id="userForm" onsubmit="saveUser(event)">
+        <div class="modal-body">
+          <input type="hidden" id="userId">
+
+          <div class="form-group">
+            <label class="form-label" for="userName">人員姓名 <span class="text-danger">*</span></label>
+            <input type="text" id="userName" class="form-control" placeholder="例: 王大明" required>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="userEmail">電子郵件 (接收提醒信) <span class="text-danger">*</span></label>
+            <input type="email" id="userEmail" class="form-control" placeholder="例: admin@ems.gov.tw" required>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="userDept">所屬單位 / 隊別</label>
+            <input type="text" id="userDept" class="form-control" placeholder="例: 第一救護分隊 / 專責救護隊" value="第一救護隊">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="userRole">權限角色設定 <span class="text-danger">*</span></label>
+            <select id="userRole" class="form-control" required onchange="updateRoleDescriptionHint()">
+              <option value="admin">最高管理員 (Super Admin)</option>
+              <option value="editor">庫存管理員 (Supply Editor)</option>
+              <option value="viewer">救護人員 (EMS Viewer - 僅瀏覽)</option>
+            </select>
+            <div id="roleHintText" class="role-hint-card mt-2">
+              <!-- Hint filled by JS -->
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('userEditModal')">取消</button>
+          <button type="submit" class="btn btn-primary">儲存人員設定</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 6. Quick Switch Active User Modal (Test RBAC) -->
+  <div class="modal-backdrop" id="userSwitchModal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3>切換目前登入測試身分 (RBAC 驗證)</h3>
+        <button class="btn-close" onclick="closeModal('userSwitchModal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="text-subtitle mb-3">選取下方人員作為當前登入身分，系統功能按鈕將會依據該身分的權限即時變更：</p>
+        <div class="user-switch-list" id="userSwitchModalList">
+          <!-- Dynamic User Switch Items -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- JavaScript Modules -->
+  <script src="js/mockData.js"></script>
+  <script src="js/state.js"></script>
+  <script src="js/rbac.js"></script>
+  <script src="js/excel.js"></script>
+  <script src="js/reminder.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
