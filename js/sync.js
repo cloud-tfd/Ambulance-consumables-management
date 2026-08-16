@@ -2,8 +2,8 @@
    EMS Consumables Management System - Google Firebase Realtime Cloud Sync Engine
    ========================================================================== */
 
-// Default top-level fallback URL (can also be configured dynamically via UI Modal)
-const FIREBASE_DATABASE_URL = "https://consumables-management-c7aaa-default-rtdb.asia-southeast1.firebasedatabase.app/";
+// ★ 您的 Firebase Realtime Database 網址（已設定）
+const FIREBASE_DATABASE_URL = "https://consumables-management-c7aaa-default-rtdb.asia-southeast1.firebasedatabase.app";
 
 const CLOUD_STORAGE_KEYS = {
   SYNC_ENABLED: "EMS_CLOUD_SYNC_ENABLED",
@@ -13,19 +13,25 @@ const CLOUD_STORAGE_KEYS = {
 
 class CloudSync {
   constructor() {
-    this.isEnabled = localStorage.getItem(CLOUD_STORAGE_KEYS.SYNC_ENABLED) !== "false";
     this.pollInterval = null;
     this.broadcastChannel = null;
     this.isSyncing = false;
     this.hasPermissionError = false;
-    this.connectionStatus = "offline"; // 'offline', 'online', 'error'
-    
-    // Cross-tab instant communication on the same computer
+    this.connectionStatus = "offline";
+
+    // If Firebase URL is hardcoded in the code, ALWAYS force sync enabled
+    // (override any stale "false" value the browser may have saved before)
+    const hasHardcodedUrl = typeof FIREBASE_DATABASE_URL === "string" && FIREBASE_DATABASE_URL.trim().length > 10;
+    if (hasHardcodedUrl) {
+      localStorage.setItem(CLOUD_STORAGE_KEYS.SYNC_ENABLED, "true");
+    }
+    this.isEnabled = localStorage.getItem(CLOUD_STORAGE_KEYS.SYNC_ENABLED) !== "false";
+
+    // Cross-tab instant communication (same device, different browser tabs)
     if (window.BroadcastChannel) {
       this.broadcastChannel = new BroadcastChannel("ems_inventory_sync_channel");
       this.broadcastChannel.onmessage = (event) => {
         if (event.data && event.data.type === "DATA_UPDATED") {
-          store.init();
           if (typeof renderAllViews === "function") renderAllViews();
         }
       };
@@ -34,27 +40,25 @@ class CloudSync {
 
   init() {
     this.updateSyncUIStatus();
-    
+
     if (this.isEnabled && this.getFirebaseUrl()) {
-      this.testFirebaseConnection().then(isOk => {
-        if (isOk) {
-          this.startRealtimePolling();
-        }
+      // Pull once immediately on startup (ignoring timestamp — force fresh pull)
+      this.pullFromCloud(true, true).then(() => {
+        // Then start polling every 4 seconds
+        this.startRealtimePolling();
       });
     }
   }
 
   getFirebaseUrl() {
-    // 1. Check custom URL saved from UI Modal first
-    let customUrl = localStorage.getItem(CLOUD_STORAGE_KEYS.FIREBASE_URL) || "";
+    // Priority: localStorage custom URL > hardcoded constant
+    let customUrl = (localStorage.getItem(CLOUD_STORAGE_KEYS.FIREBASE_URL) || "").trim();
     if (!customUrl) {
-      customUrl = typeof FIREBASE_DATABASE_URL === "string" ? FIREBASE_DATABASE_URL : "";
+      customUrl = (typeof FIREBASE_DATABASE_URL === "string" ? FIREBASE_DATABASE_URL : "").trim();
     }
-    
-    let url = customUrl.trim();
-    if (!url || url.length < 10) return null;
-    if (url.endsWith("/")) url = url.slice(0, -1);
-    return `${url}/ems_inventory_data.json`;
+    if (!customUrl || customUrl.length < 10) return null;
+    if (customUrl.endsWith("/")) customUrl = customUrl.slice(0, -1);
+    return `${customUrl}/ems_inventory_data.json`;
   }
 
   setCustomFirebaseUrl(url) {
@@ -72,7 +76,7 @@ class CloudSync {
     if (this.pollInterval) clearInterval(this.pollInterval);
     this.connectionStatus = "offline";
     this.updateSyncUIStatus();
-    if (typeof showToast === "function") showToast("已切換為單機模式 (不使用 Firebase)", "info");
+    if (typeof showToast === "function") showToast("已切換為單機模式", "info");
   }
 
   updateSyncUIStatus() {
@@ -88,21 +92,23 @@ class CloudSync {
         textEl.textContent = "❌ Firebase 權限遭拒 (需開 Rules)";
       } else if (this.connectionStatus === "online") {
         pill.className = "system-status-pill success pulse";
-        textEl.textContent = `🟢 Firebase 雲端連線正常`;
+        textEl.textContent = "🟢 Firebase 雲端同步中";
       } else {
-        pill.className = "system-status-pill success";
-        textEl.textContent = `🟢 Firebase 雲端設定完畢`;
+        pill.className = "system-status-pill warning";
+        textEl.textContent = "🟡 Firebase 連線中...";
       }
     } else {
       pill.className = "system-status-pill warning";
-      textEl.textContent = "🟡 單機模式 (點擊設定連線/備份)";
+      textEl.textContent = "🟡 單機模式 (點擊設定)";
     }
   }
 
-  // Active Connection Diagnostic Tester
+  // Active connection diagnostic tester
   async testFirebaseConnection(customUrlInput = null) {
-    const targetUrl = customUrlInput ? `${customUrlInput.trim().replace(/\/$/, '')}/ems_inventory_data.json` : this.getFirebaseUrl();
-    
+    const targetUrl = customUrlInput
+      ? `${customUrlInput.trim().replace(/\/$/, "")}/ems_inventory_data.json`
+      : this.getFirebaseUrl();
+
     if (!targetUrl) {
       this.connectionStatus = "offline";
       this.updateSyncUIStatus();
@@ -110,9 +116,7 @@ class CloudSync {
     }
 
     try {
-      // Send lightweight read ping
       const res = await fetch(targetUrl);
-
       if (res.ok) {
         this.hasPermissionError = false;
         this.connectionStatus = "online";
@@ -136,24 +140,21 @@ class CloudSync {
     }
   }
 
-  // Notify other tabs on same device
+  // Notify other tabs on the same device
   notifyLocalTabs() {
     if (this.broadcastChannel) {
       this.broadcastChannel.postMessage({ type: "DATA_UPDATED", timestamp: Date.now() });
     }
   }
 
-  // Push local state to Google Firebase Realtime Database
+  // Push local state to Firebase (silent — no toast on routine saves)
   async pushToCloud(showToastMsg = false) {
     this.notifyLocalTabs();
     const firebaseUrl = this.getFirebaseUrl();
-
     if (!this.isEnabled || !firebaseUrl || this.isSyncing) return;
 
     this.isSyncing = true;
     const nowTime = Date.now();
-    
-    // Lock local timestamp immediately
     localStorage.setItem(CLOUD_STORAGE_KEYS.LAST_SYNC_TIME, nowTime.toString());
 
     const payload = {
@@ -177,27 +178,26 @@ class CloudSync {
         this.connectionStatus = "online";
         this.updateSyncUIStatus();
         if (showToastMsg && typeof showToast === "function") {
-          showToast("已成功將衛材資料實時推播至 Firebase 雲端！", "success");
+          showToast("已成功同步至 Firebase 雲端！", "success");
         }
       } else if (res.status === 401 || res.status === 403) {
         this.hasPermissionError = true;
         this.connectionStatus = "error";
         this.updateSyncUIStatus();
         if (typeof showToast === "function") {
-          showToast("【Firebase 權限警告】請在 Firebase 控制台將 Rules 設定為 .read: true, .write: true", "danger");
+          showToast("【Firebase 權限錯誤】請在 Firebase Console 將 Rules 設定為 .read: true, .write: true", "danger");
         }
       }
     } catch (err) {
       console.warn("[Firebase Push Error]:", err);
-      this.connectionStatus = "error";
-      this.updateSyncUIStatus();
     } finally {
       this.isSyncing = false;
     }
   }
 
-  // Pull latest data from Google Firebase Realtime Database
-  async pullFromCloud(silent = false) {
+  // Pull latest data from Firebase
+  // forcePull = true: ignore timestamp, always overwrite with cloud data (used on startup)
+  async pullFromCloud(silent = false, forcePull = false) {
     const firebaseUrl = this.getFirebaseUrl();
     if (!this.isEnabled || !firebaseUrl || this.isSyncing) return;
 
@@ -214,15 +214,16 @@ class CloudSync {
           const lastLocalTime = parseInt(localStorage.getItem(CLOUD_STORAGE_KEYS.LAST_SYNC_TIME) || "0");
           const cloudTime = data.updatedAt || 0;
 
-          if (cloudTime > lastLocalTime) {
+          // On first load (forcePull) OR when cloud is newer than local: apply cloud data
+          if (forcePull || cloudTime > lastLocalTime) {
             localStorage.setItem(STORAGE_KEYS.SUPPLIES, JSON.stringify(data.supplies));
             if (data.locations) localStorage.setItem(STORAGE_KEYS.LOCATIONS, JSON.stringify(data.locations));
             if (data.users) localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(data.users));
             if (data.reminders) localStorage.setItem(STORAGE_KEYS.REMINDER_SETTINGS, JSON.stringify(data.reminders));
             if (data.auditLogs) localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(data.auditLogs));
 
-            localStorage.setItem(CLOUD_STORAGE_KEYS.LAST_SYNC_TIME, cloudTime.toString());
-            
+            localStorage.setItem(CLOUD_STORAGE_KEYS.LAST_SYNC_TIME, String(Math.max(cloudTime, Date.now())));
+
             if (typeof renderAllViews === "function") renderAllViews();
             if (!silent && typeof showToast === "function") {
               showToast("已從 Firebase 雲端同步最新資料！", "success");
@@ -239,12 +240,11 @@ class CloudSync {
     }
   }
 
-  // Realtime polling loop (checks Firebase cloud every 4 seconds)
+  // Realtime polling: pull every 4 seconds
   startRealtimePolling() {
     if (this.pollInterval) clearInterval(this.pollInterval);
-
     this.pollInterval = setInterval(() => {
-      this.pullFromCloud(true);
+      this.pullFromCloud(true, false);
     }, 4000);
   }
 }

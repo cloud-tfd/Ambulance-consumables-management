@@ -100,10 +100,10 @@ class Store {
     }
   }
 
-  // Helper trigger sync after data mutation
+  // Helper trigger sync after data mutation (silent — no toast popup on routine saves)
   triggerSync() {
     if (window.sync) {
-      sync.pushToCloud(true);
+      sync.pushToCloud(false);
     }
   }
 
