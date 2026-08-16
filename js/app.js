@@ -198,37 +198,21 @@ function renderAllViews() {
  * Cloud Synchronization Modal Handlers
  */
 function openCloudSyncModal() {
-  document.getElementById("syncBinId").value = sync.config.binId || "";
-  document.getElementById("syncApiKey").value = sync.config.apiKey || "";
+  document.getElementById("syncChannelInput").value = sync.channel || "ems_shared_station_inventory_v2";
   openModal("cloudSyncModal");
-}
-
-function enableSharedCloudPreset() {
-  // Preset Shared Shared Channel Key for EMS Station
-  const presetBinId = "66bc888888888888";
-  const presetApiKey = "$2b$10$EMS_SHARED_DATABASE_KEY_PRO_V2";
-  
-  document.getElementById("syncBinId").value = presetBinId;
-  document.getElementById("syncApiKey").value = presetApiKey;
-  
-  sync.saveConfig(presetBinId, presetApiKey);
-  showToast("已成功一鍵啟用共有雲端即時同步通道！全隊手機與電腦已即時連線！", "success");
-  closeModal("cloudSyncModal");
-  renderAllViews();
 }
 
 function saveCloudSyncForm(event) {
   event.preventDefault();
-  const binId = document.getElementById("syncBinId").value.trim();
-  const apiKey = document.getElementById("syncApiKey").value.trim();
+  const channelName = document.getElementById("syncChannelInput").value.trim();
 
-  if (!binId || !apiKey) {
-    showToast("請輸入有效的 Bin ID 與 API Key，或點擊「一鍵啟用」", "warning");
+  if (!channelName) {
+    showToast("請輸入有效的同步頻道名稱", "warning");
     return;
   }
 
-  sync.saveConfig(binId, apiKey);
-  showToast("已成功與雲端資料庫連線同步！", "success");
+  sync.setChannel(channelName);
+  showToast(`已成功連線至雲端頻道【${channelName}】！`, "success");
   closeModal("cloudSyncModal");
   renderAllViews();
 }
