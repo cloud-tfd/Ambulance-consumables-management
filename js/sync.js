@@ -1,35 +1,35 @@
 /* ==========================================================================
-   EMS Consumables Management System - Google Firebase Realtime Cloud Sync Engine
+   EMS Consumables Management System - Firebase Realtime Cloud Sync Engine
+   Version: 2.1 (Simplified & Reliable)
    ========================================================================== */
 
-// ★ Firebase Realtime Database 網址
-const FIREBASE_DATABASE_URL = "https://consumables-management-c7aaa-default-rtdb.asia-southeast1.firebasedatabase.app";
+// Firebase Realtime Database URL
+var FIREBASE_DATABASE_URL = "https://consumables-management-c7aaa-default-rtdb.asia-southeast1.firebasedatabase.app";
 
-const CLOUD_STORAGE_KEYS = {
+var CLOUD_STORAGE_KEYS = {
   SYNC_ENABLED: "EMS_CLOUD_SYNC_ENABLED",
   FIREBASE_URL: "EMS_FIREBASE_CUSTOM_URL",
   LAST_SYNC_TIME: "EMS_LAST_SYNC_TIMESTAMP"
 };
 
-class CloudSync {
-  constructor() {
+var CloudSync = (function () {
+  function CloudSync() {
     this.pollInterval = null;
-    this.broadcastChannel = null;
     this.isSyncing = false;
     this.hasPermissionError = false;
     this.connectionStatus = "offline";
+    this.lastPushTime = null;
+    this.lastPullTime = null;
 
-    // Always enable sync when URL is hardcoded in code
-    const hasHardcodedUrl = typeof FIREBASE_DATABASE_URL === "string" && FIREBASE_DATABASE_URL.trim().length > 10;
-    if (hasHardcodedUrl) {
-      localStorage.setItem(CLOUD_STORAGE_KEYS.SYNC_ENABLED, "true");
-    }
-    this.isEnabled = localStorage.getItem(CLOUD_STORAGE_KEYS.SYNC_ENABLED) !== "false";
+    // Always enable sync when URL is hardcoded
+    localStorage.setItem(CLOUD_STORAGE_KEYS.SYNC_ENABLED, "true");
+    this.isEnabled = true;
 
-    // Cross-tab sync on same device
+    // Same-device tab sync
+    var self = this;
     if (window.BroadcastChannel) {
       this.broadcastChannel = new BroadcastChannel("ems_inventory_sync_channel");
-      this.broadcastChannel.onmessage = (event) => {
+      this.broadcastChannel.onmessage = function (event) {
         if (event.data && event.data.type === "DATA_UPDATED") {
           if (typeof renderAllViews === "function") renderAllViews();
         }
@@ -37,245 +37,215 @@ class CloudSync {
     }
   }
 
-  init() {
+  CloudSync.prototype.getFirebaseUrl = function () {
+    var custom = (localStorage.getItem(CLOUD_STORAGE_KEYS.FIREBASE_URL) || "").trim();
+    var base = custom || FIREBASE_DATABASE_URL;
+    base = base.trim();
+    if (!base || base.length < 10) return null;
+    if (base.charAt(base.length - 1) === "/") base = base.slice(0, -1);
+    return base + "/ems_inventory_data.json";
+  };
+
+  CloudSync.prototype.init = function () {
+    var self = this;
     this.updateSyncUIStatus();
+    var url = this.getFirebaseUrl();
+    if (!url) return;
 
-    if (this.isEnabled && this.getFirebaseUrl()) {
-      // If this device has no local data at all, force pull from cloud first
-      const hasLocalData = (localStorage.getItem(STORAGE_KEYS.SUPPLIES) || "[]") !== "[]";
-      if (!hasLocalData) {
-        // Brand new device — pull cloud data unconditionally, then start polling
-        this._forcePullOnce().then(() => this.startRealtimePolling());
-      } else {
-        // Existing device — only pull if cloud is newer (protects local edits)
-        this.pullFromCloud(true).then(() => this.startRealtimePolling());
-      }
-    }
-  }
+    // On startup: pull from cloud if cloud is newer, then start polling
+    this.pullFromCloud(true).then(function () {
+      self.startPolling();
+    });
+  };
 
-  // One-time force pull ignoring timestamp (for new/empty devices only)
-  async _forcePullOnce() {
-    const firebaseUrl = this.getFirebaseUrl();
-    if (!firebaseUrl) return;
-    try {
-      const res = await fetch(firebaseUrl);
-      if (res.ok) {
-        const data = await res.json();
-        this.connectionStatus = "online";
-        this.updateSyncUIStatus();
-        if (data && data.supplies && Array.isArray(data.supplies) && data.supplies.length > 0) {
-          localStorage.setItem(STORAGE_KEYS.SUPPLIES, JSON.stringify(data.supplies));
-          if (data.locations) localStorage.setItem(STORAGE_KEYS.LOCATIONS, JSON.stringify(data.locations));
-          if (data.users) localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(data.users));
-          if (data.reminders) localStorage.setItem(STORAGE_KEYS.REMINDER_SETTINGS, JSON.stringify(data.reminders));
-          if (data.auditLogs) localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(data.auditLogs));
-          localStorage.setItem(CLOUD_STORAGE_KEYS.LAST_SYNC_TIME, String(data.updatedAt || Date.now()));
-          if (typeof store !== "undefined") store.init();
-          if (typeof renderAllViews === "function") renderAllViews();
-          if (typeof showToast === "function") showToast("已從 Firebase 雲端載入最新資料！", "success");
-        }
-      }
-    } catch (err) {
-      console.warn("[Firebase Force Pull Error]:", err);
-    }
-  }
-
-  getFirebaseUrl() {
-    let customUrl = (localStorage.getItem(CLOUD_STORAGE_KEYS.FIREBASE_URL) || "").trim();
-    if (!customUrl) {
-      customUrl = (typeof FIREBASE_DATABASE_URL === "string" ? FIREBASE_DATABASE_URL : "").trim();
-    }
-    if (!customUrl || customUrl.length < 10) return null;
-    if (customUrl.endsWith("/")) customUrl = customUrl.slice(0, -1);
-    return `${customUrl}/ems_inventory_data.json`;
-  }
-
-  setCustomFirebaseUrl(url) {
-    let cleanUrl = (url || "").trim();
-    if (cleanUrl.endsWith("/")) cleanUrl = cleanUrl.slice(0, -1);
-    localStorage.setItem(CLOUD_STORAGE_KEYS.FIREBASE_URL, cleanUrl);
-    localStorage.setItem(CLOUD_STORAGE_KEYS.SYNC_ENABLED, "true");
-    this.isEnabled = true;
-    this.updateSyncUIStatus();
-  }
-
-  disableSync() {
-    this.isEnabled = false;
-    localStorage.setItem(CLOUD_STORAGE_KEYS.SYNC_ENABLED, "false");
-    if (this.pollInterval) clearInterval(this.pollInterval);
-    this.connectionStatus = "offline";
-    this.updateSyncUIStatus();
-    if (typeof showToast === "function") showToast("已切換為單機模式", "info");
-  }
-
-  updateSyncUIStatus() {
-    const pill = document.getElementById("cloudSyncPill");
-    const textEl = document.getElementById("cloudSyncStatusText");
+  CloudSync.prototype.updateSyncUIStatus = function () {
+    var pill = document.getElementById("cloudSyncPill");
+    var textEl = document.getElementById("cloudSyncStatusText");
     if (!pill || !textEl) return;
 
-    const firebaseUrl = this.getFirebaseUrl();
-
-    if (this.isEnabled && firebaseUrl) {
-      if (this.hasPermissionError) {
-        pill.className = "system-status-pill danger";
-        textEl.textContent = "❌ Firebase 權限遭拒 (需開 Rules)";
-      } else if (this.connectionStatus === "online") {
-        pill.className = "system-status-pill success pulse";
-        textEl.textContent = "🟢 Firebase 雲端同步中";
-      } else {
-        pill.className = "system-status-pill warning";
-        textEl.textContent = "🟡 Firebase 連線中...";
-      }
+    if (this.hasPermissionError) {
+      pill.className = "system-status-pill danger";
+      textEl.textContent = "❌ Firebase 權限錯誤 (請開 Rules)";
+    } else if (this.connectionStatus === "online") {
+      var timeStr = this.lastPushTime ? (" · " + this.lastPushTime) : "";
+      pill.className = "system-status-pill success pulse";
+      textEl.textContent = "🟢 雲端同步中" + timeStr;
+    } else if (this.connectionStatus === "error") {
+      pill.className = "system-status-pill danger";
+      textEl.textContent = "🔴 Firebase 連線錯誤";
     } else {
       pill.className = "system-status-pill warning";
-      textEl.textContent = "🟡 單機模式 (點擊設定)";
+      textEl.textContent = "🟡 連線中...";
     }
-  }
+  };
 
-  async testFirebaseConnection(customUrlInput = null) {
-    const targetUrl = customUrlInput
-      ? `${customUrlInput.trim().replace(/\/$/, "")}/ems_inventory_data.json`
-      : this.getFirebaseUrl();
-
-    if (!targetUrl) {
-      this.connectionStatus = "offline";
-      this.updateSyncUIStatus();
-      return false;
-    }
-
-    try {
-      const res = await fetch(targetUrl);
-      if (res.ok) {
-        this.hasPermissionError = false;
-        this.connectionStatus = "online";
-        this.updateSyncUIStatus();
-        return true;
-      } else if (res.status === 401 || res.status === 403) {
-        this.hasPermissionError = true;
-        this.connectionStatus = "error";
-        this.updateSyncUIStatus();
-        return false;
-      } else {
-        this.connectionStatus = "error";
-        this.updateSyncUIStatus();
-        return false;
-      }
-    } catch (err) {
-      console.warn("[Firebase Connection Test Failed]:", err);
-      this.connectionStatus = "error";
-      this.updateSyncUIStatus();
-      return false;
-    }
-  }
-
-  notifyLocalTabs() {
-    if (this.broadcastChannel) {
-      this.broadcastChannel.postMessage({ type: "DATA_UPDATED", timestamp: Date.now() });
-    }
-  }
-
-  // Push local data to Firebase — always use current time as updatedAt
-  async pushToCloud(showToastMsg = false) {
-    this.notifyLocalTabs();
-    const firebaseUrl = this.getFirebaseUrl();
-    if (!this.isEnabled || !firebaseUrl || this.isSyncing) return;
+  // ── PUSH: Send all local data to Firebase ──────────────────────────────
+  CloudSync.prototype.pushToCloud = function (showToast) {
+    var self = this;
+    var url = this.getFirebaseUrl();
+    if (!url || this.isSyncing) return Promise.resolve(false);
 
     this.isSyncing = true;
-    const nowTime = Date.now();
+    var nowTime = Date.now();
+    // Record local push time BEFORE the async request
+    localStorage.setItem(CLOUD_STORAGE_KEYS.LAST_SYNC_TIME, String(nowTime));
 
-    // Lock local timestamp BEFORE the async PUT, so polling won't pull back old data
-    localStorage.setItem(CLOUD_STORAGE_KEYS.LAST_SYNC_TIME, nowTime.toString());
-
-    const payload = {
+    var payload = JSON.stringify({
       supplies: store.getSupplies(),
       locations: store.getLocations(),
       users: store.getUsers(),
       reminders: store.getReminderSettings(),
       auditLogs: store.getAuditLogs().slice(0, 50),
       updatedAt: nowTime
-    };
+    });
 
-    try {
-      const res = await fetch(firebaseUrl, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-
+    return fetch(url, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: payload
+    }).then(function (res) {
+      self.isSyncing = false;
       if (res.ok) {
-        this.hasPermissionError = false;
-        this.connectionStatus = "online";
-        this.updateSyncUIStatus();
-        if (showToastMsg && typeof showToast === "function") {
-          showToast("已成功同步至 Firebase 雲端！", "success");
+        self.hasPermissionError = false;
+        self.connectionStatus = "online";
+        var d = new Date(nowTime);
+        self.lastPushTime = d.getHours() + ":" + String(d.getMinutes()).padStart(2, "0") + ":" + String(d.getSeconds()).padStart(2, "0");
+        self.updateSyncUIStatus();
+        if (showToast && typeof window.showToast === "function") {
+          window.showToast("✅ 已推送至 Firebase 雲端！", "success");
         }
+        // Notify same-device tabs
+        if (self.broadcastChannel) {
+          self.broadcastChannel.postMessage({ type: "DATA_UPDATED", timestamp: nowTime });
+        }
+        return true;
       } else if (res.status === 401 || res.status === 403) {
-        this.hasPermissionError = true;
-        this.connectionStatus = "error";
-        this.updateSyncUIStatus();
-        if (typeof showToast === "function") {
-          showToast("【Firebase 權限錯誤】請在 Firebase Console 將 Rules 設定為 .read: true, .write: true", "danger");
+        self.hasPermissionError = true;
+        self.connectionStatus = "error";
+        self.updateSyncUIStatus();
+        if (typeof window.showToast === "function") {
+          window.showToast("❌ Firebase 權限拒絕！請在 Firebase Console 開啟 Rules", "danger");
         }
+        return false;
+      } else {
+        self.connectionStatus = "error";
+        self.updateSyncUIStatus();
+        return false;
       }
-    } catch (err) {
-      console.warn("[Firebase Push Error]:", err);
-    } finally {
-      this.isSyncing = false;
-    }
-  }
+    }).catch(function (err) {
+      self.isSyncing = false;
+      self.connectionStatus = "error";
+      self.updateSyncUIStatus();
+      console.error("[Firebase Push Error]:", err);
+      return false;
+    });
+  };
 
-  // Pull from Firebase — ONLY apply if cloud data is strictly newer than local
-  async pullFromCloud(silent = false) {
-    const firebaseUrl = this.getFirebaseUrl();
-    if (!this.isEnabled || !firebaseUrl || this.isSyncing) return;
+  // ── PULL: Fetch latest data from Firebase ──────────────────────────────
+  CloudSync.prototype.pullFromCloud = function (silent) {
+    var self = this;
+    var url = this.getFirebaseUrl();
+    if (!url) return Promise.resolve(false);
 
-    try {
-      const res = await fetch(firebaseUrl);
+    return fetch(url).then(function (res) {
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403) {
+          self.hasPermissionError = true;
+          self.connectionStatus = "error";
+          self.updateSyncUIStatus();
+        }
+        return false;
+      }
+      return res.json().then(function (data) {
+        self.hasPermissionError = false;
+        self.connectionStatus = "online";
+        self.updateSyncUIStatus();
 
-      if (res.ok) {
-        const data = await res.json();
-        this.hasPermissionError = false;
-        this.connectionStatus = "online";
-        this.updateSyncUIStatus();
+        if (!data || !data.supplies || !Array.isArray(data.supplies) || data.supplies.length === 0) {
+          return false;
+        }
 
-        if (data && data.supplies && Array.isArray(data.supplies) && data.supplies.length > 0) {
-          const lastLocalTime = parseInt(localStorage.getItem(CLOUD_STORAGE_KEYS.LAST_SYNC_TIME) || "0");
-          const cloudTime = data.updatedAt || 0;
+        var lastLocalTime = parseInt(localStorage.getItem(CLOUD_STORAGE_KEYS.LAST_SYNC_TIME) || "0");
+        var cloudTime = data.updatedAt || 0;
 
-          // ONLY overwrite local data if cloud is strictly newer
-          // This protects data the user just saved on this device
-          if (cloudTime > lastLocalTime) {
-            localStorage.setItem(STORAGE_KEYS.SUPPLIES, JSON.stringify(data.supplies));
-            if (data.locations) localStorage.setItem(STORAGE_KEYS.LOCATIONS, JSON.stringify(data.locations));
-            if (data.users) localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(data.users));
-            if (data.reminders) localStorage.setItem(STORAGE_KEYS.REMINDER_SETTINGS, JSON.stringify(data.reminders));
-            if (data.auditLogs) localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(data.auditLogs));
+        // Apply cloud data only if cloud is strictly newer than last known sync
+        if (cloudTime > lastLocalTime) {
+          localStorage.setItem(STORAGE_KEYS.SUPPLIES, JSON.stringify(data.supplies));
+          if (data.locations) localStorage.setItem(STORAGE_KEYS.LOCATIONS, JSON.stringify(data.locations));
+          if (data.users) localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(data.users));
+          if (data.reminders) localStorage.setItem(STORAGE_KEYS.REMINDER_SETTINGS, JSON.stringify(data.reminders));
+          if (data.auditLogs) localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(data.auditLogs));
 
-            localStorage.setItem(CLOUD_STORAGE_KEYS.LAST_SYNC_TIME, cloudTime.toString());
+          localStorage.setItem(CLOUD_STORAGE_KEYS.LAST_SYNC_TIME, String(cloudTime));
 
-            if (typeof renderAllViews === "function") renderAllViews();
-            if (!silent && typeof showToast === "function") {
-              showToast("已從 Firebase 雲端同步最新資料！", "success");
-            }
+          if (typeof renderAllViews === "function") renderAllViews();
+          if (!silent && typeof window.showToast === "function") {
+            window.showToast("已從 Firebase 同步最新資料！", "success");
           }
+          return true;
         }
-      } else if (res.status === 401 || res.status === 403) {
-        this.hasPermissionError = true;
-        this.connectionStatus = "error";
-        this.updateSyncUIStatus();
-      }
-    } catch (err) {
+        return false;
+      });
+    }).catch(function (err) {
       console.warn("[Firebase Pull Error]:", err);
-    }
-  }
+      return false;
+    });
+  };
 
-  // Polling every 4 seconds
-  startRealtimePolling() {
+  CloudSync.prototype.startPolling = function () {
+    var self = this;
     if (this.pollInterval) clearInterval(this.pollInterval);
-    this.pollInterval = setInterval(() => {
-      this.pullFromCloud(true);
+    this.pollInterval = setInterval(function () {
+      self.pullFromCloud(true);
     }, 4000);
-  }
-}
+  };
 
+  CloudSync.prototype.setCustomFirebaseUrl = function (url) {
+    var clean = (url || "").trim().replace(/\/$/, "");
+    localStorage.setItem(CLOUD_STORAGE_KEYS.FIREBASE_URL, clean);
+    this.isEnabled = true;
+    this.updateSyncUIStatus();
+  };
+
+  CloudSync.prototype.disableSync = function () {
+    this.isEnabled = false;
+    if (this.pollInterval) clearInterval(this.pollInterval);
+    this.connectionStatus = "offline";
+    this.updateSyncUIStatus();
+    if (typeof window.showToast === "function") window.showToast("已切換為單機模式", "info");
+  };
+
+  CloudSync.prototype.testFirebaseConnection = function (customUrl) {
+    var self = this;
+    var targetUrl = customUrl
+      ? customUrl.trim().replace(/\/$/, "") + "/ems_inventory_data.json"
+      : this.getFirebaseUrl();
+    if (!targetUrl) return Promise.resolve(false);
+
+    return fetch(targetUrl).then(function (res) {
+      if (res.ok) {
+        self.hasPermissionError = false;
+        self.connectionStatus = "online";
+        self.updateSyncUIStatus();
+        return true;
+      } else if (res.status === 401 || res.status === 403) {
+        self.hasPermissionError = true;
+        self.connectionStatus = "error";
+        self.updateSyncUIStatus();
+        return false;
+      }
+      self.connectionStatus = "error";
+      self.updateSyncUIStatus();
+      return false;
+    }).catch(function (err) {
+      self.connectionStatus = "error";
+      self.updateSyncUIStatus();
+      return false;
+    });
+  };
+
+  return CloudSync;
+})();
+
+// Use var so window.sync is properly set (const/let do NOT set window properties)
 var sync = new CloudSync();

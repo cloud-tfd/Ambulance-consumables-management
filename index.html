@@ -115,8 +115,13 @@
           <!-- Realtime Cloud Sync Pill Badge -->
           <div class="system-status-pill success pulse" id="cloudSyncPill" style="cursor: pointer;" title="點擊設定跨電腦/跨手機雲端即時同步頻道" onclick="openCloudSyncModal()">
             <i data-lucide="cloud-lightning"></i>
-            <span id="cloudSyncStatusText">🟡 單機模式 (點擊設定)</span>
+            <span id="cloudSyncStatusText">🟡 連線中...</span>
           </div>
+
+          <!-- Manual Force Push Button -->
+          <button class="btn btn-sm btn-secondary" title="立即推送本機資料到 Firebase 雲端" onclick="forcePushToCloud()" style="font-size:0.75rem; padding: 4px 10px;">
+            <i data-lucide="upload-cloud"></i> 立即同步↑
+          </button>
 
           <!-- Quick Action Buttons -->
           <button class="btn btn-secondary rbac-import" onclick="openExcelImportModal()">
@@ -943,13 +948,13 @@
   <!-- Toast Notification Container -->
   <div id="toastContainer" class="toast-container"></div>
 
-  <!-- JavaScript Modules (v=20260816b forces cache refresh after update) -->
-  <script src="js/mockData.js?v=20260816b"></script>
-  <script src="js/state.js?v=20260816b"></script>
-  <script src="js/sync.js?v=20260816b"></script>
-  <script src="js/rbac.js?v=20260816b"></script>
-  <script src="js/excel.js?v=20260816b"></script>
-  <script src="js/reminder.js?v=20260816b"></script>
-  <script src="js/app.js?v=20260816b"></script>
+  <!-- JavaScript Modules (v=20260816c forces cache refresh) -->
+  <script src="js/mockData.js?v=20260816c"></script>
+  <script src="js/state.js?v=20260816c"></script>
+  <script src="js/sync.js?v=20260816c"></script>
+  <script src="js/rbac.js?v=20260816c"></script>
+  <script src="js/excel.js?v=20260816c"></script>
+  <script src="js/reminder.js?v=20260816c"></script>
+  <script src="js/app.js?v=20260816c"></script>
 </body>
 </html>

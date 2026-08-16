@@ -195,6 +195,20 @@ function renderAllViews() {
 }
 
 /**
+ * Manual Force Push to Firebase (shows explicit success/failure)
+ */
+function forcePushToCloud() {
+  showToast("⏳ 正在推送資料至 Firebase...", "info");
+  sync.pushToCloud(true).then(function (ok) {
+    if (ok) {
+      runSyncDiagnostics();
+    } else {
+      showToast("❌ 推送失敗，請開啟同步設定確認連線狀態", "danger");
+    }
+  });
+}
+
+/**
  * Cloud Synchronization Modal Handlers & Firebase Tester
  */
 function openCloudSyncModal() {
