@@ -99,11 +99,33 @@ class Store {
     const target = locations.find(l => l.key === locKey);
     if (!target) return false;
 
+    // 1. Filter out location
     locations = locations.filter(l => l.key !== locKey);
     localStorage.setItem(STORAGE_KEYS.LOCATIONS, JSON.stringify(locations));
 
+    // 2. Automatically reassign any supplies inside this deleted location to default location (2樓大倉)
+    const supplies = this.getSupplies();
+    const defaultLoc = locations.length > 0 ? locations[0].key : "2樓大倉";
+    let reassignedCount = 0;
+
+    supplies.forEach(s => {
+      if (s.location === locKey) {
+        s.location = defaultLoc;
+        reassignedCount++;
+      }
+    });
+
+    if (reassignedCount > 0) {
+      localStorage.setItem(STORAGE_KEYS.SUPPLIES, JSON.stringify(supplies));
+    }
+
     const currentUser = this.getCurrentUser();
-    this.addAuditLog(currentUser.name, "移除救護車/分區位置", `移除庫位【${target.title}】`, "-1 位置");
+    this.addAuditLog(
+      currentUser.name,
+      "移除救護車/分區位置",
+      `移除庫位【${target.title}】${reassignedCount > 0 ? `(原有的 ${reassignedCount} 筆耗材已自動併入 [${defaultLoc}])` : ''}`,
+      "-1 位置"
+    );
     this.triggerSync();
     return true;
   }
@@ -372,8 +394,7 @@ class Store {
   }
 
   addAuditLog(user, action, details, change) {
-    const logs = this.getAuditLogs();
-    logs.unshift({
+    const logs.unshift({
       id: "log-" + Date.now(),
       timestamp: new Date().toLocaleString("zh-TW"),
       user,
