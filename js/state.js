@@ -102,7 +102,7 @@ class Store {
 
   // Helper trigger sync after data mutation (silent — no toast popup on routine saves)
   triggerSync() {
-    if (window.sync) {
+    if (typeof sync !== "undefined" && sync) {
       sync.pushToCloud(false);
     }
   }

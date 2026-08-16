@@ -278,4 +278,4 @@ class CloudSync {
   }
 }
 
-const sync = new CloudSync();
+var sync = new CloudSync();
