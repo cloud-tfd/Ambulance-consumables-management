@@ -1,9 +1,9 @@
 /* ==========================================================================
-   EMS Consumables Management System - Google Firebase Realtime Cloud Sync Engine
+   EMS Consumables Management System - Firebase Realtime Sync Engine
    ========================================================================== */
 
 // ==========================================================================
-// 🚨 請在此處貼上您的 Firebase Realtime Database 網址：
+// 🚨 請在此處貼上您的 Firebase Realtime Database 網址 (若留空則為 100% 穩定純單機模式)
 // 範例: const FIREBASE_DATABASE_URL = "https://ems-system-default-rtdb.asia-southeast1.firebasedatabase.app";
 // ==========================================================================
 const FIREBASE_DATABASE_URL = "";
@@ -36,17 +36,15 @@ class CloudSync {
   init() {
     this.updateSyncUIStatus();
     
+    // Only start polling if FIREBASE_DATABASE_URL is explicitly configured by user
     if (this.isEnabled && this.getFirebaseUrl()) {
-      // Perform initial push first if cloud might be empty, then start pulling
-      this.pushToCloud(true).then(() => {
-        this.startRealtimePolling();
-      });
+      this.startRealtimePolling();
     }
   }
 
   getFirebaseUrl() {
-    let url = FIREBASE_DATABASE_URL.trim();
-    if (!url) return null;
+    let url = (typeof FIREBASE_DATABASE_URL === "string" ? FIREBASE_DATABASE_URL : "").trim();
+    if (!url || url.length < 10) return null;
     if (url.endsWith("/")) url = url.slice(0, -1);
     return `${url}/ems_inventory_data.json`;
   }
@@ -69,14 +67,14 @@ class CloudSync {
     if (this.isEnabled && firebaseUrl) {
       if (this.hasPermissionError) {
         pill.className = "system-status-pill danger";
-        textEl.textContent = "❌ Firebase 權限遭拒 (需開啟 Rules)";
+        textEl.textContent = "❌ Firebase 權限拒絕 (需開 Rules)";
       } else {
         pill.className = "system-status-pill success pulse";
-        textEl.textContent = `🟢 Firebase 雲端即時同步中`;
+        textEl.textContent = `🟢 Firebase 雲端同步中`;
       }
     } else {
       pill.className = "system-status-pill warning";
-      textEl.textContent = "🟡 本地單機模式 (點擊匯出/載入備份)";
+      textEl.textContent = "🟡 本地模式 (支援一鍵備份)";
     }
   }
 
@@ -92,16 +90,22 @@ class CloudSync {
     this.notifyLocalTabs();
     const firebaseUrl = this.getFirebaseUrl();
 
+    // If Firebase URL is not configured, do nothing and preserve local data
     if (!this.isEnabled || !firebaseUrl || this.isSyncing) return;
 
     this.isSyncing = true;
+    const nowTime = Date.now();
+    
+    // Lock local timestamp immediately so background polling won't overwrite local edit
+    localStorage.setItem(CLOUD_STORAGE_KEYS.LAST_SYNC_TIME, nowTime.toString());
+
     const payload = {
       supplies: store.getSupplies(),
       locations: store.getLocations(),
       users: store.getUsers(),
       reminders: store.getReminderSettings(),
       auditLogs: store.getAuditLogs().slice(0, 50),
-      updatedAt: new Date().getTime()
+      updatedAt: nowTime
     };
 
     try {
@@ -113,7 +117,6 @@ class CloudSync {
 
       if (res.ok) {
         this.hasPermissionError = false;
-        localStorage.setItem(CLOUD_STORAGE_KEYS.LAST_SYNC_TIME, payload.updatedAt.toString());
         this.updateSyncUIStatus();
         if (showToastMsg && typeof showToast === "function") {
           showToast("已成功將資料同步至 Firebase 雲端！", "success");
@@ -121,9 +124,9 @@ class CloudSync {
       } else if (res.status === 401 || res.status === 403) {
         this.hasPermissionError = true;
         this.updateSyncUIStatus();
-        console.error("[Firebase Permission Error]: Database rules blocked write access.");
+        console.error("[Firebase Permission Error]: Write blocked by database rules.");
         if (typeof showToast === "function") {
-          showToast("【Firebase 警告】雲端資料庫拒絕存取！請在 Firebase Rules 開啟 read/write: true 權限", "danger");
+          showToast("【Firebase 權限錯誤】雲端資料庫拒絕存取！請在 Firebase Rules 設定 .write: true", "danger");
         }
       }
     } catch (err) {
@@ -144,11 +147,12 @@ class CloudSync {
       if (res.ok) {
         const data = await res.json();
 
-        // Only overwrite local storage if cloud contains valid supply data
+        // Safely pull from cloud ONLY if cloud has newer valid payload
         if (data && data.supplies && Array.isArray(data.supplies) && data.supplies.length > 0) {
           const lastLocalTime = parseInt(localStorage.getItem(CLOUD_STORAGE_KEYS.LAST_SYNC_TIME) || "0");
           const cloudTime = data.updatedAt || 0;
 
+          // Pull ONLY if cloud is strictly newer than local edit
           if (cloudTime > lastLocalTime) {
             localStorage.setItem(STORAGE_KEYS.SUPPLIES, JSON.stringify(data.supplies));
             if (data.locations) localStorage.setItem(STORAGE_KEYS.LOCATIONS, JSON.stringify(data.locations));
