@@ -30,7 +30,6 @@ const INITIAL_MOCK_LOCATIONS = [
   { key: "1號救護車-主包", title: "1號救護車 - 主包", icon: "ambulance", description: "第一出勤救護車主要急救包" },
   { key: "1號救護車-備包", title: "1號救護車 - 備包", icon: "briefcase-medical", description: "第一出勤救護車備用耗材包" },
   { key: "2號救護車-主包", title: "2號救護車 - 主包", icon: "ambulance", description: "第二出勤救護車急救包" },
-  { key: "1樓小倉", title: "1樓小倉", icon: "box", description: "1樓機動衛材小庫房" },
   { key: "2樓大倉", title: "2樓大倉", icon: "warehouse", description: "主要衛材大型貯存倉庫 (預設預備庫)" }
 ];
 
@@ -99,8 +98,8 @@ const INITIAL_MOCK_SUPPLIES = [
     quantity: 18,
     minStock: 10,
     unit: "瓶",
-    location: "1樓小倉",
-    notes: "靜脈輸液用，存放於1樓小倉"
+    location: "2樓大倉",
+    notes: "靜脈輸液用，存放於2樓大倉"
   },
   {
     id: "sup-106",
@@ -135,8 +134,8 @@ const INITIAL_MOCK_SUPPLIES = [
     quantity: 45,
     minStock: 20,
     unit: "個",
-    location: "1樓小倉",
-    notes: "傳染病防護必備，存放於1樓小倉"
+    location: "2樓大倉",
+    notes: "傳染病防護必備，存放於2樓大倉"
   }
 ];
 

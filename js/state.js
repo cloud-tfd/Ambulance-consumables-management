@@ -62,6 +62,44 @@ class Store {
       ];
       localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(initialLogs));
     }
+
+    // Hard Purge 1樓小倉 from LocalStorage
+    this.purgeTargetLocation("1樓小倉");
+  }
+
+  // Hard Purge method for cleanup
+  purgeTargetLocation(targetName) {
+    const cleanTarget = (targetName || "").replace(/\\/g, "").trim();
+
+    // 1. Purge from Locations array
+    let locations = this.getLocations();
+    const initialLocLen = locations.length;
+    locations = locations.filter(l => {
+      const k = (l.key || "").replace(/\\/g, "").trim();
+      const t = (l.title || "").replace(/\\/g, "").trim();
+      return k !== cleanTarget && t !== cleanTarget;
+    });
+
+    if (locations.length !== initialLocLen) {
+      localStorage.setItem(STORAGE_KEYS.LOCATIONS, JSON.stringify(locations));
+    }
+
+    // 2. Reassign supplies from purged location to 2樓大倉
+    let supplies = this.getSupplies();
+    const defaultLoc = locations.length > 0 ? locations[0].key : "2樓大倉";
+    let updated = false;
+
+    supplies.forEach(s => {
+      const sLoc = (s.location || "").replace(/\\/g, "").trim();
+      if (sLoc === cleanTarget) {
+        s.location = defaultLoc;
+        updated = true;
+      }
+    });
+
+    if (updated) {
+      localStorage.setItem(STORAGE_KEYS.SUPPLIES, JSON.stringify(supplies));
+    }
   }
 
   // Helper trigger sync after data mutation
