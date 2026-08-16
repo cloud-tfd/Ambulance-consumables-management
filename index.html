@@ -103,6 +103,15 @@
         </div>
 
         <div class="header-actions">
+          <!-- Quick Sync / Backup Buttons -->
+          <button class="btn btn-secondary rbac-export" title="將目前電腦的所有耗材匯出為一鍵備份檔" onclick="exportFullSystemJSON()">
+            <i data-lucide="download-cloud"></i> 匯出系統備份
+          </button>
+          
+          <button class="btn btn-secondary rbac-import" title="將備份檔載入至此電腦進行同步" onclick="importFullSystemJSON()">
+            <i data-lucide="upload-cloud"></i> 載入系統備份
+          </button>
+
           <!-- Realtime Cloud Sync Pill Badge -->
           <div class="system-status-pill success pulse" id="cloudSyncPill" title="點擊設定跨電腦/跨手機雲端即時同步頻道" onclick="openCloudSyncModal()">
             <i data-lucide="cloud-lightning"></i>
@@ -112,10 +121,6 @@
           <!-- Quick Action Buttons -->
           <button class="btn btn-secondary rbac-import" onclick="openExcelImportModal()">
             <i data-lucide="file-up"></i> Excel 匯入
-          </button>
-          
-          <button class="btn btn-secondary rbac-export" onclick="exportInventoryExcel()">
-            <i data-lucide="file-down"></i> 匯出 Excel
           </button>
 
           <button class="btn btn-primary rbac-add" onclick="openSupplyModal()">

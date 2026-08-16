@@ -1,20 +1,24 @@
 /* ==========================================================================
-   EMS Consumables Management System - Cloud Realtime Synchronization Engine
+   EMS Consumables Management System - Google Firebase Realtime Cloud Sync Engine
    ========================================================================== */
+
+// ==========================================================================
+// 🚨 請在此處貼上您的 Firebase Realtime Database 網址：https://consumables-management-c7aaa-default-rtdb.asia-southeast1.firebasedatabase.app/
+:
+null
+
+// 範例: const FIREBASE_DATABASE_URL = "https://ems-system-default-rtdb.asia-southeast1.firebasedatabase.app";
+// ==========================================================================
+const FIREBASE_DATABASE_URL = "";
 
 const CLOUD_STORAGE_KEYS = {
   SYNC_ENABLED: "EMS_CLOUD_SYNC_ENABLED",
-  SYNC_CHANNEL: "EMS_CLOUD_SYNC_CHANNEL",
   LAST_SYNC_TIME: "EMS_LAST_SYNC_TIMESTAMP"
 };
 
-// Default shared cloud endpoint channel for EMS Station
-const DEFAULT_SHARED_CHANNEL = "ems_shared_station_inventory_v2";
-
 class CloudSync {
   constructor() {
-    this.isEnabled = localStorage.getItem(CLOUD_STORAGE_KEYS.SYNC_ENABLED) !== "false"; // Default to enabled
-    this.channel = localStorage.getItem(CLOUD_STORAGE_KEYS.SYNC_CHANNEL) || DEFAULT_SHARED_CHANNEL;
+    this.isEnabled = localStorage.getItem(CLOUD_STORAGE_KEYS.SYNC_ENABLED) !== "false";
     this.pollInterval = null;
     this.broadcastChannel = null;
     this.isSyncing = false;
@@ -32,31 +36,20 @@ class CloudSync {
   }
 
   init() {
-    // Save default channel if not set
-    if (!localStorage.getItem(CLOUD_STORAGE_KEYS.SYNC_CHANNEL)) {
-      localStorage.setItem(CLOUD_STORAGE_KEYS.SYNC_CHANNEL, DEFAULT_SHARED_CHANNEL);
-    }
-
     this.updateSyncUIStatus();
     
-    if (this.isEnabled) {
-      // Pull latest data from cloud on startup
+    if (this.isEnabled && FIREBASE_DATABASE_URL.trim() !== "") {
+      // Pull latest data from Firebase cloud on startup
       this.pullFromCloud(true);
       this.startRealtimePolling();
     }
   }
 
-  // Set custom channel ID (e.g. "taipei_station_1")
-  setChannel(channelName) {
-    if (!channelName) channelName = DEFAULT_SHARED_CHANNEL;
-    this.channel = channelName.trim();
-    this.isEnabled = true;
-    localStorage.setItem(CLOUD_STORAGE_KEYS.SYNC_CHANNEL, this.channel);
-    localStorage.setItem(CLOUD_STORAGE_KEYS.SYNC_ENABLED, "true");
-    
-    this.updateSyncUIStatus();
-    this.pushToCloud(false);
-    this.startRealtimePolling();
+  getFirebaseUrl() {
+    let url = FIREBASE_DATABASE_URL.trim();
+    if (!url) return null;
+    if (url.endsWith("/")) url = url.slice(0, -1);
+    return `${url}/ems_inventory_data.json`;
   }
 
   disableSync() {
@@ -72,12 +65,14 @@ class CloudSync {
     const textEl = document.getElementById("cloudSyncStatusText");
     if (!pill || !textEl) return;
 
-    if (this.isEnabled) {
+    const firebaseUrl = this.getFirebaseUrl();
+
+    if (this.isEnabled && firebaseUrl) {
       pill.className = "system-status-pill success pulse";
-      textEl.textContent = `🟢 雲端同步中 (${this.channel})`;
+      textEl.textContent = `🟢 Firebase 雲端即時同步中`;
     } else {
       pill.className = "system-status-pill warning";
-      textEl.textContent = "🟡 單機模式 (點擊開啟同步)";
+      textEl.textContent = "🟡 本地備份模式 (尚未填寫 Firebase 網址)";
     }
   }
 
@@ -88,10 +83,12 @@ class CloudSync {
     }
   }
 
-  // Push local state to 100% Live Cloud Storage API (kvdb.io)
+  // Push local state to Google Firebase Realtime Database
   async pushToCloud(showToastMsg = false) {
     this.notifyLocalTabs();
-    if (!this.isEnabled || this.isSyncing) return;
+    const firebaseUrl = this.getFirebaseUrl();
+
+    if (!this.isEnabled || !firebaseUrl || this.isSyncing) return;
 
     this.isSyncing = true;
     const payload = {
@@ -104,9 +101,8 @@ class CloudSync {
     };
 
     try {
-      const url = `https://kvdb.io/9k8Jz8Q8Zq8/${encodeURIComponent(this.channel)}`;
-      const res = await fetch(url, {
-        method: "POST",
+      const res = await fetch(firebaseUrl, {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
@@ -114,23 +110,25 @@ class CloudSync {
       if (res.ok) {
         localStorage.setItem(CLOUD_STORAGE_KEYS.LAST_SYNC_TIME, payload.updatedAt.toString());
         if (showToastMsg && typeof showToast === "function") {
-          showToast("已成功將最新資料上傳同步至雲端！", "success");
+          showToast("已成功將資料實時推播至 Firebase 雲端！", "success");
         }
+      } else {
+        console.warn("[Firebase Push Warning]:", await res.text());
       }
     } catch (err) {
-      console.warn("[Sync Push Error]:", err);
+      console.warn("[Firebase Push Error]:", err);
     } finally {
       this.isSyncing = false;
     }
   }
 
-  // Pull latest data from Cloud Storage API
+  // Pull latest data from Google Firebase Realtime Database
   async pullFromCloud(silent = false) {
-    if (!this.isEnabled || this.isSyncing) return;
+    const firebaseUrl = this.getFirebaseUrl();
+    if (!this.isEnabled || !firebaseUrl || this.isSyncing) return;
 
     try {
-      const url = `https://kvdb.io/9k8Jz8Q8Zq8/${encodeURIComponent(this.channel)}`;
-      const res = await fetch(url);
+      const res = await fetch(firebaseUrl);
 
       if (res.ok) {
         const data = await res.json();
@@ -151,17 +149,17 @@ class CloudSync {
             
             if (typeof renderAllViews === "function") renderAllViews();
             if (!silent && typeof showToast === "function") {
-              showToast("已從雲端同步載入最新耗材資料！", "success");
+              showToast("已從 Firebase 雲端載入最新耗材資料！", "success");
             }
           }
         }
       }
     } catch (err) {
-      console.warn("[Sync Pull Error]:", err);
+      console.warn("[Firebase Pull Error]:", err);
     }
   }
 
-  // Realtime polling loop (checks cloud every 3 seconds)
+  // Realtime polling loop (checks Firebase cloud every 3 seconds)
   startRealtimePolling() {
     if (this.pollInterval) clearInterval(this.pollInterval);
 
