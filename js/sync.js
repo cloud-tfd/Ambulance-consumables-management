@@ -3,7 +3,7 @@
    ========================================================================== */
 
 // Default top-level fallback URL (can also be configured dynamically via UI Modal)
-const FIREBASE_DATABASE_URL = "";
+const FIREBASE_DATABASE_URL = "https://consumables-management-c7aaa-default-rtdb.asia-southeast1.firebasedatabase.app/";
 
 const CLOUD_STORAGE_KEYS = {
   SYNC_ENABLED: "EMS_CLOUD_SYNC_ENABLED",
