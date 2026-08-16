@@ -2,7 +2,7 @@
    EMS Consumables Management System - Google Firebase Realtime Cloud Sync Engine
    ========================================================================== */
 
-// ★ 您的 Firebase Realtime Database 網址（已設定）
+// ★ Firebase Realtime Database 網址
 const FIREBASE_DATABASE_URL = "https://consumables-management-c7aaa-default-rtdb.asia-southeast1.firebasedatabase.app";
 
 const CLOUD_STORAGE_KEYS = {
@@ -19,15 +19,14 @@ class CloudSync {
     this.hasPermissionError = false;
     this.connectionStatus = "offline";
 
-    // If Firebase URL is hardcoded in the code, ALWAYS force sync enabled
-    // (override any stale "false" value the browser may have saved before)
+    // Always enable sync when URL is hardcoded in code
     const hasHardcodedUrl = typeof FIREBASE_DATABASE_URL === "string" && FIREBASE_DATABASE_URL.trim().length > 10;
     if (hasHardcodedUrl) {
       localStorage.setItem(CLOUD_STORAGE_KEYS.SYNC_ENABLED, "true");
     }
     this.isEnabled = localStorage.getItem(CLOUD_STORAGE_KEYS.SYNC_ENABLED) !== "false";
 
-    // Cross-tab instant communication (same device, different browser tabs)
+    // Cross-tab sync on same device
     if (window.BroadcastChannel) {
       this.broadcastChannel = new BroadcastChannel("ems_inventory_sync_channel");
       this.broadcastChannel.onmessage = (event) => {
@@ -42,16 +41,46 @@ class CloudSync {
     this.updateSyncUIStatus();
 
     if (this.isEnabled && this.getFirebaseUrl()) {
-      // Pull once immediately on startup (ignoring timestamp — force fresh pull)
-      this.pullFromCloud(true, true).then(() => {
-        // Then start polling every 4 seconds
-        this.startRealtimePolling();
-      });
+      // If this device has no local data at all, force pull from cloud first
+      const hasLocalData = (localStorage.getItem(STORAGE_KEYS.SUPPLIES) || "[]") !== "[]";
+      if (!hasLocalData) {
+        // Brand new device — pull cloud data unconditionally, then start polling
+        this._forcePullOnce().then(() => this.startRealtimePolling());
+      } else {
+        // Existing device — only pull if cloud is newer (protects local edits)
+        this.pullFromCloud(true).then(() => this.startRealtimePolling());
+      }
+    }
+  }
+
+  // One-time force pull ignoring timestamp (for new/empty devices only)
+  async _forcePullOnce() {
+    const firebaseUrl = this.getFirebaseUrl();
+    if (!firebaseUrl) return;
+    try {
+      const res = await fetch(firebaseUrl);
+      if (res.ok) {
+        const data = await res.json();
+        this.connectionStatus = "online";
+        this.updateSyncUIStatus();
+        if (data && data.supplies && Array.isArray(data.supplies) && data.supplies.length > 0) {
+          localStorage.setItem(STORAGE_KEYS.SUPPLIES, JSON.stringify(data.supplies));
+          if (data.locations) localStorage.setItem(STORAGE_KEYS.LOCATIONS, JSON.stringify(data.locations));
+          if (data.users) localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(data.users));
+          if (data.reminders) localStorage.setItem(STORAGE_KEYS.REMINDER_SETTINGS, JSON.stringify(data.reminders));
+          if (data.auditLogs) localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(data.auditLogs));
+          localStorage.setItem(CLOUD_STORAGE_KEYS.LAST_SYNC_TIME, String(data.updatedAt || Date.now()));
+          if (typeof store !== "undefined") store.init();
+          if (typeof renderAllViews === "function") renderAllViews();
+          if (typeof showToast === "function") showToast("已從 Firebase 雲端載入最新資料！", "success");
+        }
+      }
+    } catch (err) {
+      console.warn("[Firebase Force Pull Error]:", err);
     }
   }
 
   getFirebaseUrl() {
-    // Priority: localStorage custom URL > hardcoded constant
     let customUrl = (localStorage.getItem(CLOUD_STORAGE_KEYS.FIREBASE_URL) || "").trim();
     if (!customUrl) {
       customUrl = (typeof FIREBASE_DATABASE_URL === "string" ? FIREBASE_DATABASE_URL : "").trim();
@@ -103,7 +132,6 @@ class CloudSync {
     }
   }
 
-  // Active connection diagnostic tester
   async testFirebaseConnection(customUrlInput = null) {
     const targetUrl = customUrlInput
       ? `${customUrlInput.trim().replace(/\/$/, "")}/ems_inventory_data.json`
@@ -140,14 +168,13 @@ class CloudSync {
     }
   }
 
-  // Notify other tabs on the same device
   notifyLocalTabs() {
     if (this.broadcastChannel) {
       this.broadcastChannel.postMessage({ type: "DATA_UPDATED", timestamp: Date.now() });
     }
   }
 
-  // Push local state to Firebase (silent — no toast on routine saves)
+  // Push local data to Firebase — always use current time as updatedAt
   async pushToCloud(showToastMsg = false) {
     this.notifyLocalTabs();
     const firebaseUrl = this.getFirebaseUrl();
@@ -155,6 +182,8 @@ class CloudSync {
 
     this.isSyncing = true;
     const nowTime = Date.now();
+
+    // Lock local timestamp BEFORE the async PUT, so polling won't pull back old data
     localStorage.setItem(CLOUD_STORAGE_KEYS.LAST_SYNC_TIME, nowTime.toString());
 
     const payload = {
@@ -195,9 +224,8 @@ class CloudSync {
     }
   }
 
-  // Pull latest data from Firebase
-  // forcePull = true: ignore timestamp, always overwrite with cloud data (used on startup)
-  async pullFromCloud(silent = false, forcePull = false) {
+  // Pull from Firebase — ONLY apply if cloud data is strictly newer than local
+  async pullFromCloud(silent = false) {
     const firebaseUrl = this.getFirebaseUrl();
     if (!this.isEnabled || !firebaseUrl || this.isSyncing) return;
 
@@ -214,15 +242,16 @@ class CloudSync {
           const lastLocalTime = parseInt(localStorage.getItem(CLOUD_STORAGE_KEYS.LAST_SYNC_TIME) || "0");
           const cloudTime = data.updatedAt || 0;
 
-          // On first load (forcePull) OR when cloud is newer than local: apply cloud data
-          if (forcePull || cloudTime > lastLocalTime) {
+          // ONLY overwrite local data if cloud is strictly newer
+          // This protects data the user just saved on this device
+          if (cloudTime > lastLocalTime) {
             localStorage.setItem(STORAGE_KEYS.SUPPLIES, JSON.stringify(data.supplies));
             if (data.locations) localStorage.setItem(STORAGE_KEYS.LOCATIONS, JSON.stringify(data.locations));
             if (data.users) localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(data.users));
             if (data.reminders) localStorage.setItem(STORAGE_KEYS.REMINDER_SETTINGS, JSON.stringify(data.reminders));
             if (data.auditLogs) localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(data.auditLogs));
 
-            localStorage.setItem(CLOUD_STORAGE_KEYS.LAST_SYNC_TIME, String(Math.max(cloudTime, Date.now())));
+            localStorage.setItem(CLOUD_STORAGE_KEYS.LAST_SYNC_TIME, cloudTime.toString());
 
             if (typeof renderAllViews === "function") renderAllViews();
             if (!silent && typeof showToast === "function") {
@@ -240,11 +269,11 @@ class CloudSync {
     }
   }
 
-  // Realtime polling: pull every 4 seconds
+  // Polling every 4 seconds
   startRealtimePolling() {
     if (this.pollInterval) clearInterval(this.pollInterval);
     this.pollInterval = setInterval(() => {
-      this.pullFromCloud(true, false);
+      this.pullFromCloud(true);
     }, 4000);
   }
 }
