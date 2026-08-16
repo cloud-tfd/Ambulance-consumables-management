@@ -195,15 +195,57 @@ function renderAllViews() {
 }
 
 /**
- * Cloud Synchronization Modal Handlers
+ * Cloud Synchronization Modal Handlers & Firebase Tester
  */
 function openCloudSyncModal() {
   const inputEl = document.getElementById("firebaseUrlInput");
-  if (inputEl) inputEl.value = (typeof FIREBASE_DATABASE_URL === "string" ? FIREBASE_DATABASE_URL : "");
+  const msgEl = document.getElementById("firebaseTestResultMsg");
+  if (msgEl) msgEl.innerHTML = "";
+
+  let activeUrl = localStorage.getItem(CLOUD_STORAGE_KEYS.FIREBASE_URL) || "";
+  if (!activeUrl) activeUrl = typeof FIREBASE_DATABASE_URL === "string" ? FIREBASE_DATABASE_URL : "";
+
+  if (inputEl) inputEl.value = activeUrl;
   openModal("cloudSyncModal");
 }
 
-function disableCloudSync() {
+async function testAndSaveFirebaseUI() {
+  const inputEl = document.getElementById("firebaseUrlInput");
+  const msgEl = document.getElementById("firebaseTestResultMsg");
+  
+  const rawUrl = inputEl ? inputEl.value.trim() : "";
+  if (!rawUrl) {
+    if (msgEl) msgEl.innerHTML = `<span class="text-warning">⚠️ 請輸入有效的 Firebase 網址 (或點擊『切換為單機模式』)</span>`;
+    return;
+  }
+
+  if (msgEl) msgEl.innerHTML = `<span class="text-accent">⏳ 正在實時連線測試 Firebase 雲端資料庫中...</span>`;
+
+  const isSuccess = await sync.testFirebaseConnection(rawUrl);
+
+  if (isSuccess) {
+    sync.setCustomFirebaseUrl(rawUrl);
+    sync.pushToCloud(true);
+    sync.startRealtimePolling();
+    if (msgEl) msgEl.innerHTML = `<span class="text-success">🟢 連線成功！已成功連線至 Firebase 雲端資料庫！</span>`;
+    showToast("Firebase 雲端連線成功！異動將實時同步至所有連線裝置", "success");
+    setTimeout(() => {
+      closeModal("cloudSyncModal");
+      renderAllViews();
+    }, 1200);
+  } else {
+    if (sync.hasPermissionError) {
+      if (msgEl) msgEl.innerHTML = `<span class="text-danger">❌ 權限遭拒！請在 Firebase 網站將 Rules 改為 ".read": true, ".write": true</span>`;
+      showToast("【Firebase 權限警告】Rules 拒絕存取，請在 Firebase 網站開啟 Rules 權限", "danger");
+    } else {
+      if (msgEl) msgEl.innerHTML = `<span class="text-danger">❌ 連線失敗！請檢查網址格式是否正確 (例: https://xxx.firebaseio.com)</span>`;
+      showToast("Firebase 連線失敗，請檢查網址與網路狀態", "warning");
+    }
+  }
+}
+
+function disableCloudSyncUI() {
+  localStorage.removeItem(CLOUD_STORAGE_KEYS.FIREBASE_URL);
   sync.disableSync();
   closeModal("cloudSyncModal");
   renderAllViews();
