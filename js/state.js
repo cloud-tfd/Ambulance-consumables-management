@@ -62,10 +62,8 @@ class Store {
       ];
       localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(initialLogs));
     }
-
-    // Hard Purge 1樓小倉 from LocalStorage
-    this.purgeTargetLocation("1樓小倉");
   }
+
 
   // Hard Purge method for cleanup
   purgeTargetLocation(targetName) {
