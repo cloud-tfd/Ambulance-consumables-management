@@ -6,7 +6,7 @@
 // 🚨 請在此處貼上您的 Firebase Realtime Database 網址 (若留空則為 100% 穩定純單機模式)
 // 範例: const FIREBASE_DATABASE_URL = "https://ems-system-default-rtdb.asia-southeast1.firebasedatabase.app";
 // ==========================================================================
-const FIREBASE_DATABASE_URL = "";
+const FIREBASE_DATABASE_URL = "https://consumables-management-c7aaa-default-rtdb.asia-southeast1.firebasedatabase.app/";
 
 const CLOUD_STORAGE_KEYS = {
   SYNC_ENABLED: "EMS_CLOUD_SYNC_ENABLED",

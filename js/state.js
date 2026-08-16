@@ -96,20 +96,32 @@ class Store {
 
   deleteLocation(locKey) {
     let locations = this.getLocations();
-    const target = locations.find(l => l.key === locKey);
-    if (!target) return false;
+    const cleanKey = (locKey || "").replace(/\\/g, "").trim();
 
-    // 1. Filter out location
-    locations = locations.filter(l => l.key !== locKey);
+    // Flexible matching ignoring trailing backslashes or spaces
+    const targetIndex = locations.findIndex(l => {
+      const k = (l.key || "").replace(/\\/g, "").trim();
+      const t = (l.title || "").replace(/\\/g, "").trim();
+      return k === cleanKey || t === cleanKey || l.key === locKey || l.title === locKey;
+    });
+
+    if (targetIndex !== -1) {
+      locations.splice(targetIndex, 1);
+    } else {
+      // Force filter matching name ignoring backslashes
+      locations = locations.filter(l => (l.key || "").replace(/\\/g, "").trim() !== cleanKey);
+    }
+
     localStorage.setItem(STORAGE_KEYS.LOCATIONS, JSON.stringify(locations));
 
-    // 2. Automatically reassign any supplies inside this deleted location to default location (2樓大倉)
+    // Reassign supplies from deleted location to default location (2樓大倉)
     const supplies = this.getSupplies();
     const defaultLoc = locations.length > 0 ? locations[0].key : "2樓大倉";
     let reassignedCount = 0;
 
     supplies.forEach(s => {
-      if (s.location === locKey) {
+      const sLocClean = (s.location || "").replace(/\\/g, "").trim();
+      if (sLocClean === cleanKey || s.location === locKey) {
         s.location = defaultLoc;
         reassignedCount++;
       }
@@ -123,7 +135,7 @@ class Store {
     this.addAuditLog(
       currentUser.name,
       "移除救護車/分區位置",
-      `移除庫位【${target.title}】${reassignedCount > 0 ? `(原有的 ${reassignedCount} 筆耗材已自動併入 [${defaultLoc}])` : ''}`,
+      `移除庫位【${locKey}】${reassignedCount > 0 ? `(原有的 ${reassignedCount} 筆耗材已自動併入 [${defaultLoc}])` : ''}`,
       "-1 位置"
     );
     this.triggerSync();
