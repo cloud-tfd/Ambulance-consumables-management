@@ -64,6 +64,13 @@ class Store {
     }
   }
 
+  // Helper trigger sync after data mutation
+  triggerSync() {
+    if (window.sync) {
+      sync.pushToCloud(true);
+    }
+  }
+
   // --- Locations CRUD ---
   getLocations() {
     return JSON.parse(localStorage.getItem(STORAGE_KEYS.LOCATIONS) || "[]");
@@ -83,6 +90,7 @@ class Store {
 
     const currentUser = this.getCurrentUser();
     this.addAuditLog(currentUser.name, "新增救護車/分區位置", `新增庫位【${locObj.title}】`, "+1 位置");
+    this.triggerSync();
     return locObj;
   }
 
@@ -96,6 +104,7 @@ class Store {
 
     const currentUser = this.getCurrentUser();
     this.addAuditLog(currentUser.name, "移除救護車/分區位置", `移除庫位【${target.title}】`, "-1 位置");
+    this.triggerSync();
     return true;
   }
 
@@ -132,6 +141,7 @@ class Store {
       `數量: ${supplyData.quantity} ${supplyData.unit}`
     );
 
+    this.triggerSync();
     return supplyData;
   }
 
@@ -145,6 +155,7 @@ class Store {
 
     const currentUser = this.getCurrentUser();
     this.addAuditLog(currentUser.name, "刪除耗材", `${target.name} [批號:${target.batch}]`, "-");
+    this.triggerSync();
     return true;
   }
 
@@ -158,6 +169,7 @@ class Store {
 
     const currentUser = this.getCurrentUser();
     this.addAuditLog(currentUser.name, "批量刪除耗材", `批量成功刪除 ${deletedCount} 筆耗材`, `-${deletedCount} 筆`);
+    this.triggerSync();
     return deletedCount;
   }
 
@@ -190,13 +202,12 @@ class Store {
         `【全部轉移】${sourceItem.name} (${currentQty} ${sourceItem.unit}) 從 [${oldLoc}] 轉移至 [${targetLocation}]`,
         `庫位轉移`
       );
+      this.triggerSync();
       return { success: true, mode: "full", name: sourceItem.name, count: currentQty, oldLoc, targetLocation };
     } else {
       // PARTIAL TRANSFER
-      // 1. Deduct from source item
       sourceItem.quantity -= transferQty;
 
-      // 2. Merge into target item at destination if matching item exists (same name, batch, expiry)
       let targetItem = supplies.find(s => 
         s.name === sourceItem.name && 
         s.location === targetLocation && 
@@ -207,7 +218,6 @@ class Store {
       if (targetItem) {
         targetItem.quantity += transferQty;
       } else {
-        // Create new item entry at target location
         targetItem = {
           id: "sup-tr-" + Date.now(),
           name: sourceItem.name,
@@ -231,6 +241,7 @@ class Store {
         `【部分轉移】${sourceItem.name} (${transferQty} ${sourceItem.unit}) 從 [${oldLoc}] 轉移至 [${targetLocation}]`,
         `-${transferQty} / +${transferQty}`
       );
+      this.triggerSync();
       return { success: true, mode: "partial", name: sourceItem.name, count: transferQty, oldLoc, targetLocation };
     }
   }
@@ -242,7 +253,6 @@ class Store {
     supplyIds.forEach(id => {
       const item = supplies.find(s => s.id === id);
       if (item && item.location !== targetLocation) {
-        const oldLoc = item.location;
         item.location = targetLocation;
         transferredCount++;
       }
@@ -257,6 +267,7 @@ class Store {
       `批量將 ${transferredCount} 筆耗材全部轉移至 [${targetLocation}]`,
       `${transferredCount} 筆`
     );
+    this.triggerSync();
     return transferredCount;
   }
 
@@ -278,6 +289,7 @@ class Store {
       `成功匯入 ${importedList.length} 筆救護衛材數據`,
       `+${importedList.length} 筆`
     );
+    this.triggerSync();
   }
 
   // --- Users & RBAC ---
@@ -309,6 +321,7 @@ class Store {
 
     const currentUser = this.getCurrentUser();
     this.addAuditLog(currentUser.name, "更新管理人員", `${userData.name} (${userData.role})`, "--");
+    this.triggerSync();
     return userData;
   }
 
@@ -316,6 +329,7 @@ class Store {
     let users = this.getUsers();
     users = users.filter(u => u.id !== userId);
     localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+    this.triggerSync();
   }
 
   // --- Reminder Settings ---
@@ -328,6 +342,7 @@ class Store {
     
     const currentUser = this.getCurrentUser();
     this.addAuditLog(currentUser.name, "更新提醒規則", `提醒天數區間: [${settings.intervals.join(', ')}] 天前`, "--");
+    this.triggerSync();
   }
 
   // --- Outbox & Audit Logs ---

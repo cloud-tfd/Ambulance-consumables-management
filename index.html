@@ -103,10 +103,10 @@
         </div>
 
         <div class="header-actions">
-          <!-- Quick Status Indicator -->
-          <div class="system-status-pill success" id="notificationStatusPill" onclick="switchTab('tab-reminders')">
-            <i data-lucide="mail-check"></i>
-            <span>自動寄信服務運作中</span>
+          <!-- Realtime Cloud Sync Pill Badge -->
+          <div class="system-status-pill warning" id="cloudSyncPill" title="點擊設定跨電腦/跨手機雲端即時同步" onclick="openCloudSyncModal()">
+            <i data-lucide="cloud-lightning"></i>
+            <span id="cloudSyncStatusText">雲端即時同步設定</span>
           </div>
 
           <!-- Quick Action Buttons -->
@@ -148,7 +148,7 @@
             <div class="stat-info">
               <div class="stat-label">已過期耗材</div>
               <div class="stat-value text-danger" id="statExpiredItems">0</div>
-              <div class="stat-sub text-danger">須立即下架更換</div>
+              <div class="stat-sub text-danger">須頁面下架更換</div>
             </div>
           </div>
 
@@ -222,7 +222,7 @@
         </div>
       </section>
 
-      <!-- 2. TAB: INVENTORY LIST (WITH BATCH CHECKBOXES & LOCATION TRANSFER) -->
+      <!-- 2. TAB: INVENTORY LIST -->
       <section id="tab-inventory" class="tab-content">
         <!-- Filter and Search Toolbar -->
         <div class="toolbar-card card">
@@ -594,7 +594,7 @@
     </div>
   </div>
 
-  <!-- 2. Transfer Location Modal (SINGLE / BATCH TRANSFER) -->
+  <!-- 2. Transfer Location Modal -->
   <div class="modal-backdrop" id="transferModal">
     <div class="modal-dialog">
       <div class="modal-header">
@@ -683,7 +683,47 @@
     </div>
   </div>
 
-  <!-- 4. Excel Import & Sample Download Modal -->
+  <!-- 4. Realtime Cloud Sync Modal -->
+  <div class="modal-backdrop" id="cloudSyncModal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3><i data-lucide="cloud-lightning" class="text-primary"></i> 跨電腦/跨手機 雲端即時同步設定</h3>
+        <button class="btn-close" onclick="closeModal('cloudSyncModal')">&times;</button>
+      </div>
+      <form id="cloudSyncForm" onsubmit="saveCloudSyncForm(event)">
+        <div class="modal-body">
+          <p class="text-subtitle mb-3">開啟雲端即時同步後，所有管理人員與隊員不論使用哪台電腦或手機，異動衛材庫存時均會**即時自動同步**！</p>
+
+          <div class="card sub-card mb-3">
+            <h4 style="font-weight: 700; font-size: 0.9rem;"><i data-lucide="zap" class="text-warning"></i> 一鍵開啟共有雲端資料庫</h4>
+            <p class="form-hint">點擊下方按鈕，系統將自動套用分隊專屬共有雲端資料庫通道：</p>
+            <button type="button" class="btn btn-sm btn-accent mt-2" onclick="enableSharedCloudPreset()">
+              <i data-lucide="check-circle-2"></i> 一鍵啟用共有雲端即時同步 (推薦)
+            </button>
+          </div>
+
+          <hr class="divider mb-3">
+
+          <div class="form-group">
+            <label class="form-label" for="syncBinId">雲端Bin ID (Bin ID)</label>
+            <input type="text" id="syncBinId" class="form-control" placeholder="例: 66bc1234567890">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="syncApiKey">雲端 API Key (Master Key)</label>
+            <input type="password" id="syncApiKey" class="form-control" placeholder="$2b$10$...">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-danger btn-sm" onclick="disableCloudSync()">停用同步 (改回單機)</button>
+          <button type="button" class="btn btn-secondary" onclick="closeModal('cloudSyncModal')">取消</button>
+          <button type="submit" class="btn btn-primary">儲存並開始同步</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 5. Excel Import & Sample Download Modal -->
   <div class="modal-backdrop" id="excelImportModal">
     <div class="modal-dialog modal-lg">
       <div class="modal-header">
@@ -812,7 +852,7 @@
     </div>
   </div>
 
-  <!-- 5. User RBAC Edit Modal -->
+  <!-- 6. User RBAC Edit Modal -->
   <div class="modal-backdrop" id="userEditModal">
     <div class="modal-dialog">
       <div class="modal-header">
@@ -858,7 +898,7 @@
     </div>
   </div>
 
-  <!-- 6. Quick Switch Active User Modal (Test RBAC) -->
+  <!-- 7. Quick Switch Active User Modal (Test RBAC) -->
   <div class="modal-backdrop" id="userSwitchModal">
     <div class="modal-dialog">
       <div class="modal-header">
@@ -880,6 +920,7 @@
   <!-- JavaScript Modules -->
   <script src="js/mockData.js"></script>
   <script src="js/state.js"></script>
+  <script src="js/sync.js"></script>
   <script src="js/rbac.js"></script>
   <script src="js/excel.js"></script>
   <script src="js/reminder.js"></script>
