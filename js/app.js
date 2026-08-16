@@ -198,23 +198,9 @@ function renderAllViews() {
  * Cloud Synchronization Modal Handlers
  */
 function openCloudSyncModal() {
-  document.getElementById("syncChannelInput").value = sync.channel || "ems_shared_station_inventory_v2";
+  const inputEl = document.getElementById("firebaseUrlInput");
+  if (inputEl) inputEl.value = (typeof FIREBASE_DATABASE_URL === "string" ? FIREBASE_DATABASE_URL : "");
   openModal("cloudSyncModal");
-}
-
-function saveCloudSyncForm(event) {
-  event.preventDefault();
-  const channelName = document.getElementById("syncChannelInput").value.trim();
-
-  if (!channelName) {
-    showToast("請輸入有效的同步頻道名稱", "warning");
-    return;
-  }
-
-  sync.setChannel(channelName);
-  showToast(`已成功連線至雲端頻道【${channelName}】！`, "success");
-  closeModal("cloudSyncModal");
-  renderAllViews();
 }
 
 function disableCloudSync() {

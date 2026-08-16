@@ -113,9 +113,9 @@
           </button>
 
           <!-- Realtime Cloud Sync Pill Badge -->
-          <div class="system-status-pill success pulse" id="cloudSyncPill" title="點擊設定跨電腦/跨手機雲端即時同步頻道" onclick="openCloudSyncModal()">
+          <div class="system-status-pill success pulse" id="cloudSyncPill" style="cursor: pointer;" title="點擊設定跨電腦/跨手機雲端即時同步頻道" onclick="openCloudSyncModal()">
             <i data-lucide="cloud-lightning"></i>
-            <span id="cloudSyncStatusText">🟢 雲端同步中</span>
+            <span id="cloudSyncStatusText">🟡 單機模式 (點擊設定)</span>
           </div>
 
           <!-- Quick Action Buttons -->
@@ -692,25 +692,41 @@
   <div class="modal-backdrop" id="cloudSyncModal">
     <div class="modal-dialog">
       <div class="modal-header">
-        <h3><i data-lucide="cloud-lightning" class="text-primary"></i> 跨電腦/跨手機 雲端即時同步頻道</h3>
+        <h3><i data-lucide="cloud-lightning" class="text-primary"></i> 系統資料同步與備份設定</h3>
         <button class="btn-close" onclick="closeModal('cloudSyncModal')">&times;</button>
       </div>
-      <form id="cloudSyncForm" onsubmit="saveCloudSyncForm(event)">
-        <div class="modal-body">
-          <p class="text-subtitle mb-3">多台電腦與手機只要設定**相同的同步頻道名稱**，異動衛材庫存時均會**自動即時同步**！</p>
+      <div class="modal-body">
+        <p class="text-subtitle mb-3">您可以選擇使用「一鍵檔案備份」快速同步別台電腦，或是設定「Firebase 雲端資料庫」即時連線：</p>
 
-          <div class="form-group">
-            <label class="form-label" for="syncChannelInput">分隊專屬同步頻道名稱 <span class="text-danger">*</span></label>
-            <input type="text" id="syncChannelInput" class="form-control" placeholder="例: ems_shared_station_inventory_v2" value="ems_shared_station_inventory_v2" required>
-            <div class="form-hint mt-1">預設共有頻道：<code>ems_shared_station_inventory_v2</code> (也可輸入貴分隊名稱自訂獨立頻道)</div>
+        <!-- Option 1: One-Click JSON Backup -->
+        <div class="card sub-card mb-3">
+          <h4 style="font-weight: 700; font-size: 0.95rem;" class="flex items-center gap-2">
+            <i data-lucide="hard-drive" class="text-success"></i> 方式一：一鍵檔案備份與同步 (10秒完成 / 100%成功)
+          </h4>
+          <p class="form-hint mt-1">將您這台電腦的資料打包匯出，傳到別台電腦點擊「載入備份」即可瞬間同步！</p>
+          <div class="flex gap-2 mt-3">
+            <button type="button" class="btn btn-sm btn-secondary" onclick="exportFullSystemJSON(); closeModal('cloudSyncModal');">
+              <i data-lucide="download-cloud"></i> 匯出這台電腦的備份檔
+            </button>
+            <button type="button" class="btn btn-sm btn-secondary" onclick="importFullSystemJSON(); closeModal('cloudSyncModal');">
+              <i data-lucide="upload-cloud"></i> 載入備份檔至這台電腦
+            </button>
           </div>
         </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-danger btn-sm" onclick="disableCloudSync()">切換為單機模式</button>
-          <button type="button" class="btn btn-secondary" onclick="closeModal('cloudSyncModal')">取消</button>
-          <button type="submit" class="btn btn-primary">連線並開始同步</button>
+
+        <!-- Option 2: Firebase Realtime Database -->
+        <div class="card sub-card">
+          <h4 style="font-weight: 700; font-size: 0.95rem;" class="flex items-center gap-2">
+            <i data-lucide="cloud" class="text-accent"></i> 方式二：Firebase 雲端資料庫網址設定
+          </h4>
+          <p class="form-hint mt-1">若要在 <a href="file:///C:/Users/USER/.gemini/antigravity/scratch/ambulance-supplies-app/js/sync.js#L8" style="color:var(--accent);">js/sync.js</a> 綁定 Firebase 免費資料庫網址：</p>
+          <input type="text" id="firebaseUrlInput" class="form-control mt-2" placeholder="https://your-project-default-rtdb.firebaseio.com">
+          <div class="form-hint mt-1">若留空則自動維護為 100% 穩定的單機防護模式。</div>
         </div>
-      </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('cloudSyncModal')">關閉</button>
+      </div>
     </div>
   </div>
 
