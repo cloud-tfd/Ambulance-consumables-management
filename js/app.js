@@ -666,10 +666,10 @@ function sortInventory(field) {
 }
 
 function resetInventoryFilters() {
-  document.getElementById("inventorySearchInput").value = "";
-  document.getElementById("filterCategory").value = "ALL";
-  document.getElementById("filterLocation").value = "ALL";
-  document.getElementById("filterStatus").value = "ALL";
+  if (document.getElementById("inventorySearchInput")) document.getElementById("inventorySearchInput").value = "";
+  if (document.getElementById("filterCategory")) document.getElementById("filterCategory").value = "ALL";
+  if (document.getElementById("filterLocation")) document.getElementById("filterLocation").value = "ALL";
+  if (document.getElementById("filterStatus")) document.getElementById("filterStatus").value = "ALL";
   selectedSupplyIds.clear();
   renderInventoryTable();
 }
@@ -971,6 +971,7 @@ function saveSupply(event) {
   };
 
   store.saveSupply(supplyData);
+  resetInventoryFilters(); // Reset search filters so newly added item is immediately visible!
   showToast(`已成功儲存耗材【${supplyData.name}】`, "success");
   closeModal("supplyModal");
   renderAllViews();
