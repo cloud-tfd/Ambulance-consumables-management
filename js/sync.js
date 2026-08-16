@@ -3,10 +3,7 @@
    ========================================================================== */
 
 // ==========================================================================
-// 🚨 請在此處貼上您的 Firebase Realtime Database 網址：https://consumables-management-c7aaa-default-rtdb.asia-southeast1.firebasedatabase.app/
-:
-null
-
+// 🚨 請在此處貼上您的 Firebase Realtime Database 網址：
 // 範例: const FIREBASE_DATABASE_URL = "https://ems-system-default-rtdb.asia-southeast1.firebasedatabase.app";
 // ==========================================================================
 const FIREBASE_DATABASE_URL = "";
@@ -22,6 +19,7 @@ class CloudSync {
     this.pollInterval = null;
     this.broadcastChannel = null;
     this.isSyncing = false;
+    this.hasPermissionError = false;
     
     // Cross-tab instant communication on the same computer
     if (window.BroadcastChannel) {
@@ -38,10 +36,11 @@ class CloudSync {
   init() {
     this.updateSyncUIStatus();
     
-    if (this.isEnabled && FIREBASE_DATABASE_URL.trim() !== "") {
-      // Pull latest data from Firebase cloud on startup
-      this.pullFromCloud(true);
-      this.startRealtimePolling();
+    if (this.isEnabled && this.getFirebaseUrl()) {
+      // Perform initial push first if cloud might be empty, then start pulling
+      this.pushToCloud(true).then(() => {
+        this.startRealtimePolling();
+      });
     }
   }
 
@@ -68,11 +67,16 @@ class CloudSync {
     const firebaseUrl = this.getFirebaseUrl();
 
     if (this.isEnabled && firebaseUrl) {
-      pill.className = "system-status-pill success pulse";
-      textEl.textContent = `🟢 Firebase 雲端即時同步中`;
+      if (this.hasPermissionError) {
+        pill.className = "system-status-pill danger";
+        textEl.textContent = "❌ Firebase 權限遭拒 (需開啟 Rules)";
+      } else {
+        pill.className = "system-status-pill success pulse";
+        textEl.textContent = `🟢 Firebase 雲端即時同步中`;
+      }
     } else {
       pill.className = "system-status-pill warning";
-      textEl.textContent = "🟡 本地備份模式 (尚未填寫 Firebase 網址)";
+      textEl.textContent = "🟡 本地單機模式 (點擊匯出/載入備份)";
     }
   }
 
@@ -108,12 +112,19 @@ class CloudSync {
       });
 
       if (res.ok) {
+        this.hasPermissionError = false;
         localStorage.setItem(CLOUD_STORAGE_KEYS.LAST_SYNC_TIME, payload.updatedAt.toString());
+        this.updateSyncUIStatus();
         if (showToastMsg && typeof showToast === "function") {
-          showToast("已成功將資料實時推播至 Firebase 雲端！", "success");
+          showToast("已成功將資料同步至 Firebase 雲端！", "success");
         }
-      } else {
-        console.warn("[Firebase Push Warning]:", await res.text());
+      } else if (res.status === 401 || res.status === 403) {
+        this.hasPermissionError = true;
+        this.updateSyncUIStatus();
+        console.error("[Firebase Permission Error]: Database rules blocked write access.");
+        if (typeof showToast === "function") {
+          showToast("【Firebase 警告】雲端資料庫拒絕存取！請在 Firebase Rules 開啟 read/write: true 權限", "danger");
+        }
       }
     } catch (err) {
       console.warn("[Firebase Push Error]:", err);
@@ -133,12 +144,12 @@ class CloudSync {
       if (res.ok) {
         const data = await res.json();
 
-        if (data && data.supplies && Array.isArray(data.supplies)) {
+        // Only overwrite local storage if cloud contains valid supply data
+        if (data && data.supplies && Array.isArray(data.supplies) && data.supplies.length > 0) {
           const lastLocalTime = parseInt(localStorage.getItem(CLOUD_STORAGE_KEYS.LAST_SYNC_TIME) || "0");
           const cloudTime = data.updatedAt || 0;
 
-          // If cloud data is newer or first load
-          if (cloudTime > lastLocalTime || silent) {
+          if (cloudTime > lastLocalTime) {
             localStorage.setItem(STORAGE_KEYS.SUPPLIES, JSON.stringify(data.supplies));
             if (data.locations) localStorage.setItem(STORAGE_KEYS.LOCATIONS, JSON.stringify(data.locations));
             if (data.users) localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(data.users));
@@ -149,7 +160,7 @@ class CloudSync {
             
             if (typeof renderAllViews === "function") renderAllViews();
             if (!silent && typeof showToast === "function") {
-              showToast("已從 Firebase 雲端載入最新耗材資料！", "success");
+              showToast("已從 Firebase 載入最新資料！", "success");
             }
           }
         }
@@ -159,13 +170,13 @@ class CloudSync {
     }
   }
 
-  // Realtime polling loop (checks Firebase cloud every 3 seconds)
+  // Realtime polling loop (checks Firebase cloud every 4 seconds)
   startRealtimePolling() {
     if (this.pollInterval) clearInterval(this.pollInterval);
 
     this.pollInterval = setInterval(() => {
       this.pullFromCloud(true);
-    }, 3000);
+    }, 4000);
   }
 }
 
