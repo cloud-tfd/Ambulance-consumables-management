@@ -207,6 +207,55 @@ function openCloudSyncModal() {
 
   if (inputEl) inputEl.value = activeUrl;
   openModal("cloudSyncModal");
+  // Auto-run diagnostics on open
+  setTimeout(runSyncDiagnostics, 200);
+}
+
+async function runSyncDiagnostics() {
+  const panel = document.getElementById("syncDiagnosticsPanel");
+  if (!panel) return;
+
+  const firebaseUrl = sync.getFirebaseUrl();
+  const isEnabled = sync.isEnabled;
+  const localCount = store.getSupplies().length;
+  const lastSync = localStorage.getItem(CLOUD_STORAGE_KEYS.LAST_SYNC_TIME);
+  const lastSyncStr = lastSync ? new Date(parseInt(lastSync)).toLocaleString("zh-TW") : "（從未同步）";
+
+  panel.innerHTML = `
+    <div>🔌 同步狀態：<b>${isEnabled ? "✅ 已啟用" : "❌ 已停用 (單機模式)"}</b></div>
+    <div>🔗 Firebase 網址：<b style="word-break:break-all">${firebaseUrl || "❌ 未設定"}</b></div>
+    <div>📦 本地耗材數量：<b>${localCount} 筆</b></div>
+    <div>🕐 上次同步時間：<b>${lastSyncStr}</b></div>
+    <div>📡 連線狀態：<b>${sync.connectionStatus === "online" ? "🟢 線上" : sync.connectionStatus === "error" ? "🔴 錯誤" : "🟡 測試中..."}</b></div>
+    <hr style="margin:8px 0; opacity:0.3">
+    <div id="diagFirebaseResult">⏳ 正在向 Firebase 發送測試請求...</div>
+  `;
+
+  if (!firebaseUrl) {
+    document.getElementById("diagFirebaseResult").innerHTML = "❌ <b>Firebase 網址未設定</b>，請在上方輸入框貼入網址後點擊「測試並儲存」";
+    return;
+  }
+
+  try {
+    const res = await fetch(firebaseUrl);
+    const diagEl = document.getElementById("diagFirebaseResult");
+    if (res.ok) {
+      const data = await res.json();
+      const cloudCount = (data && data.supplies) ? data.supplies.length : 0;
+      const cloudTime = (data && data.updatedAt) ? new Date(data.updatedAt).toLocaleString("zh-TW") : "無資料";
+      diagEl.innerHTML = `
+        ✅ <b>Firebase 連線正常！</b><br>
+        ☁️ 雲端耗材數量：<b>${cloudCount} 筆</b><br>
+        🕐 雲端最後更新：<b>${cloudTime}</b>
+      `;
+    } else if (res.status === 401 || res.status === 403) {
+      diagEl.innerHTML = `❌ <b>Firebase 權限遭拒 (HTTP ${res.status})</b><br>請前往 Firebase Console → Realtime Database → Rules，將規則改為 .read: true, .write: true`;
+    } else {
+      diagEl.innerHTML = `⚠️ Firebase 回應錯誤：HTTP ${res.status}`;
+    }
+  } catch (err) {
+    document.getElementById("diagFirebaseResult").innerHTML = `❌ 連線失敗：${err.message}（請確認網路是否正常）`;
+  }
 }
 
 async function testAndSaveFirebaseUI() {
@@ -225,7 +274,7 @@ async function testAndSaveFirebaseUI() {
 
   if (isSuccess) {
     sync.setCustomFirebaseUrl(rawUrl);
-    sync.pushToCloud(true);
+    sync.pushToCloud(false);
     sync.startRealtimePolling();
     if (msgEl) msgEl.innerHTML = `<span class="text-success">🟢 連線成功！已成功連線至 Firebase 雲端資料庫！</span>`;
     showToast("Firebase 雲端連線成功！異動將實時同步至所有連線裝置", "success");
@@ -250,6 +299,7 @@ function disableCloudSyncUI() {
   closeModal("cloudSyncModal");
   renderAllViews();
 }
+
 
 /**
  * 1. DASHBOARD VIEW RENDERERS
