@@ -394,7 +394,8 @@ class Store {
   }
 
   addAuditLog(user, action, details, change) {
-    const logs.unshift({
+    const logs = this.getAuditLogs();
+    logs.unshift({
       id: "log-" + Date.now(),
       timestamp: new Date().toLocaleString("zh-TW"),
       user,
