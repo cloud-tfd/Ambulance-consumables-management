@@ -1,4 +1,8 @@
 #!/usr/bin/env node
+/**
+ * EMS 救護耗材自動到期提醒腳本
+ * 每天由 GitHub Actions 執行，依照網頁設定的頻率決定是否寄信
+ */
 
 const FIREBASE_URL     = process.env.FIREBASE_URL;
 const SERVICE_ID       = process.env.EMAILJS_SERVICE_ID;
@@ -15,23 +19,25 @@ async function fetchJSON(url) {
   return res.json();
 }
 
-function daysUntilExpiry(expiryDateStr) {
+function daysUntilExpiry(dateStr) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const exp = new Date(expiryDateStr);
+  const exp = new Date(dateStr);
   exp.setHours(0, 0, 0, 0);
-  return Math.ceil((exp - today) / (1000 * 60 * 60 * 24));
+  return Math.ceil((exp - today) / 86400000);
 }
 
 async function main() {
   console.log("=== 救護耗材自動提醒腳本啟動 ===");
   console.log("執行時間：", new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" }));
 
+  // 驗證環境變數
   if (!FIREBASE_URL) { console.error("❌ 缺少 FIREBASE_URL"); process.exit(1); }
   if (!SERVICE_ID || !TEMPLATE_ID || !PUBLIC_KEY) { console.error("❌ 缺少 EmailJS 設定"); process.exit(1); }
   if (!PRIVATE_KEY) { console.error("❌ 缺少 EMAILJS_PRIVATE_KEY"); process.exit(1); }
   if (RECIPIENT_EMAILS.length === 0) { console.error("❌ 缺少收件者 Email"); process.exit(1); }
 
+  // 從 Firebase 讀取資料
   const base = FIREBASE_URL.replace(/\/$/, "");
   console.log("\n📡 從 Firebase 讀取資料...");
 
@@ -44,41 +50,78 @@ async function main() {
   }
 
   if (!data || !Array.isArray(data.supplies)) {
-    console.log("⚠️ Firebase 無耗材資料，跳過發信");
+    console.log("⚠️ Firebase 無耗材資料，跳過");
     process.exit(0);
   }
 
-  const supplies = data.supplies;
-  console.log(`✅ 讀取到 ${supplies.length} 筆耗材資料`);
+  console.log(`✅ 讀取到 ${data.supplies.length} 筆耗材資料`);
 
+  // ── 讀取網頁上的提醒設定，決定今天是否寄信 ──────────────────
+  const settings  = data.reminders || {};
+  const enabled   = settings.enabled !== false; // 預設啟用
+  const frequency = settings.frequency || "weekly_monday";
+
+  if (!enabled) {
+    console.log("✅ 提醒功能已在網頁設定中停用，跳過發信");
+    process.exit(0);
+  }
+
+  // 取得台灣今天的星期與日期
+  const nowTW      = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
+  const dayOfWeek  = nowTW.getDay();   // 0=日,1=一,2=二,...,6=六
+  const dateOfMonth = nowTW.getDate(); // 1–31
+
+  let shouldSendToday = false;
+  if      (frequency === "daily")          shouldSendToday = true;
+  else if (frequency === "weekly_monday")  shouldSendToday = (dayOfWeek === 1);
+  else if (frequency === "weekly_friday")  shouldSendToday = (dayOfWeek === 5);
+  else if (frequency === "biweekly") {
+    const weekNum = Math.ceil(((nowTW - new Date(nowTW.getFullYear(), 0, 1)) / 86400000 + 1) / 7);
+    shouldSendToday = (dayOfWeek === 1 && weekNum % 2 === 0);
+  }
+  else if (frequency === "monthly")        shouldSendToday = (dateOfMonth === 1);
+
+  const freqLabel = {
+    daily: "每日", weekly_monday: "每週一", weekly_friday: "每週五",
+    biweekly: "每兩週", monthly: "每月1日"
+  }[frequency] || frequency;
+
+  if (!shouldSendToday) {
+    console.log(`✅ 今天不是發信日（網頁設定頻率：${freqLabel}），跳過發信`);
+    process.exit(0);
+  }
+
+  console.log(`📅 今天符合發信條件（頻率：${freqLabel}），繼續執行...`);
+
+  // ── 篩選即期 / 過期耗材 ──────────────────────────────────────
   const alertItems = [];
-  for (const s of supplies) {
+  for (const s of data.supplies) {
     if (!s.expiry) continue;
     const days = daysUntilExpiry(s.expiry);
     if (days < 0 || days <= MAX_DAYS) {
       alertItems.push({ supply: s, daysLeft: days });
     }
   }
-
   alertItems.sort((a, b) => a.daysLeft - b.daysLeft);
 
   const expiredCount  = alertItems.filter(i => i.daysLeft < 0).length;
   const expiringCount = alertItems.filter(i => i.daysLeft >= 0).length;
-
   console.log(`\n📊 統計：${expiredCount} 項已過期 | ${expiringCount} 項即將到期`);
 
   if (alertItems.length === 0) {
-    console.log("✅ 無需發送提醒（所有耗材均在安全效期內）");
+    console.log("✅ 所有耗材均在安全效期內，無需發信");
     process.exit(0);
   }
 
-  const subject = `【救護衛材警示】${expiredCount} 項過期 / ${expiringCount} 項即期 — 每週自動通知`;
+  // ── 組合郵件內容 ──────────────────────────────────────────────
+  const subject = `【救護衛材警示】${expiredCount} 項過期 / ${expiringCount} 項即期 — 自動通知`;
 
   let body = `親愛的救護衛材管理員，您好：\n\n`;
   body += `系統自動掃描發現，共有 ${alertItems.length} 項耗材即將到期或已過期，請儘速安排盤點替換！\n\n`;
-  body += `掃描時間：${new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" })}\n`;
+  body += `掃描時間：${nowTW.toLocaleString("zh-TW")}\n`;
+  body += `發信頻率設定：${freqLabel}\n`;
   body += `========================================================\n`;
-  body += `  🚨 即期/過期耗材清冊 (${MAX_DAYS} 天內到期)\n`;
+  body += `  🚨 即期/過期耗材清冊（${MAX_DAYS} 天內到期）\n`;
   body += `========================================================\n\n`;
 
   alertItems.forEach((item, idx) => {
@@ -92,16 +135,16 @@ async function main() {
     body += `   - 數量: ${s.quantity} ${s.unit || "個"} (安全底限: ${s.minStock || 0})\n`;
     body += `--------------------------------------------------------\n`;
   });
-
   body += `\n請前往「救護耗材智慧管理系統」進行補給作業。\n`;
 
+  // ── 發送郵件 ─────────────────────────────────────────────────
   console.log(`\n📧 開始發送郵件給 ${RECIPIENT_EMAILS.length} 位收件者...`);
   let successCount = 0;
 
   for (const email of RECIPIENT_EMAILS) {
     try {
       const res = await fetch("https://api.emailjs.com/api/v1.0/email/send", {
-        method: "POST",
+        method:  "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           service_id:      SERVICE_ID,
