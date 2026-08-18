@@ -20,7 +20,72 @@ document.addEventListener("DOMContentLoaded", () => {
   if ("Notification" in window && Notification.permission === "default") {
     Notification.requestPermission();
   }
+
+  // Start automatic reminder scheduler
+  startReminderScheduler();
 });
+
+/**
+ * ============================================================
+ * AUTO REMINDER SCHEDULER
+ * Checks every 60 seconds if it's time to auto-send reminders.
+ * Also checks on page load in case the browser was closed when
+ * the scheduled time passed.
+ * ============================================================
+ */
+const REMINDER_LAST_SENT_KEY = "EMS_REMINDER_LAST_SENT_DATE";
+
+function startReminderScheduler() {
+  // Check immediately on page load (handles missed reminders)
+  checkAndFireReminder();
+
+  // Then check every 60 seconds
+  setInterval(checkAndFireReminder, 60 * 1000);
+}
+
+function checkAndFireReminder() {
+  const settings = store.getReminderSettings();
+  if (!settings.enabled) return;
+
+  const now = new Date();
+  const todayStr = now.toISOString().split("T")[0]; // "YYYY-MM-DD"
+  const currentHHMM = now.getHours().toString().padStart(2, "0") + ":" + now.getMinutes().toString().padStart(2, "0");
+  const scheduledTime = settings.time || "08:00";
+  const frequency = settings.frequency || "weekly_monday";
+
+  // Check if today is the correct day
+  const dayOfWeek = now.getDay(); // 0=Sun,1=Mon,...,6=Sat
+  let shouldSendToday = false;
+
+  if (frequency === "daily") {
+    shouldSendToday = true;
+  } else if (frequency === "weekly_monday") {
+    shouldSendToday = (dayOfWeek === 1); // Monday
+  } else if (frequency === "weekly_friday") {
+    shouldSendToday = (dayOfWeek === 5); // Friday
+  } else if (frequency === "biweekly") {
+    // Fire on Monday of even weeks (week number mod 2 === 0)
+    const weekNum = Math.ceil((Math.floor((now - new Date(now.getFullYear(), 0, 1)) / 86400000) + 1) / 7);
+    shouldSendToday = (dayOfWeek === 1 && weekNum % 2 === 0);
+  } else if (frequency === "monthly") {
+    shouldSendToday = (now.getDate() === 1); // First day of month
+  }
+
+  if (!shouldSendToday) return;
+
+  // Check if current time has reached or passed the scheduled time
+  if (currentHHMM < scheduledTime) return;
+
+  // Check if we already sent today (prevent duplicate sends)
+  const lastSentDate = localStorage.getItem(REMINDER_LAST_SENT_KEY) || "";
+  if (lastSentDate === todayStr) return;
+
+  // All conditions met — fire the reminder!
+  console.log("[Reminder Scheduler] Firing auto reminder for", todayStr);
+  localStorage.setItem(REMINDER_LAST_SENT_KEY, todayStr);
+  triggerImmediateEmailDispatch();
+}
+
 
 function initLucideIcons() {
   if (window.lucide) {
