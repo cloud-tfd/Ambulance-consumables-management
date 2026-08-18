@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 
-const FIREBASE_URL = process.env.FIREBASE_URL;
-const SERVICE_ID = process.env.EMAILJS_SERVICE_ID;
-const TEMPLATE_ID = process.env.EMAILJS_TEMPLATE_ID;
-const PUBLIC_KEY = process.env.EMAILJS_PUBLIC_KEY;
+const FIREBASE_URL     = process.env.FIREBASE_URL;
+const SERVICE_ID       = process.env.EMAILJS_SERVICE_ID;
+const TEMPLATE_ID      = process.env.EMAILJS_TEMPLATE_ID;
+const PUBLIC_KEY       = process.env.EMAILJS_PUBLIC_KEY;
+const PRIVATE_KEY      = process.env.EMAILJS_PRIVATE_KEY;
 const RECIPIENT_EMAILS = (process.env.RECIPIENT_EMAILS || "").split(",").map(e => e.trim()).filter(Boolean);
 
 const MAX_DAYS = 30;
@@ -28,10 +29,11 @@ async function main() {
 
   if (!FIREBASE_URL) { console.error("❌ 缺少 FIREBASE_URL"); process.exit(1); }
   if (!SERVICE_ID || !TEMPLATE_ID || !PUBLIC_KEY) { console.error("❌ 缺少 EmailJS 設定"); process.exit(1); }
+  if (!PRIVATE_KEY) { console.error("❌ 缺少 EMAILJS_PRIVATE_KEY"); process.exit(1); }
   if (RECIPIENT_EMAILS.length === 0) { console.error("❌ 缺少收件者 Email"); process.exit(1); }
 
   const base = FIREBASE_URL.replace(/\/$/, "");
-  console.log(`\n📡 從 Firebase 讀取資料...`);
+  console.log("\n📡 從 Firebase 讀取資料...");
 
   let data;
   try {
@@ -60,7 +62,7 @@ async function main() {
 
   alertItems.sort((a, b) => a.daysLeft - b.daysLeft);
 
-  const expiredCount = alertItems.filter(i => i.daysLeft < 0).length;
+  const expiredCount  = alertItems.filter(i => i.daysLeft < 0).length;
   const expiringCount = alertItems.filter(i => i.daysLeft >= 0).length;
 
   console.log(`\n📊 統計：${expiredCount} 項已過期 | ${expiringCount} 項即將到期`);
@@ -98,15 +100,14 @@ async function main() {
 
   for (const email of RECIPIENT_EMAILS) {
     try {
-      onst PRIVATE_KEY = process.env.EMAILJS_PRIVATE_KEY;
       const res = await fetch("https://api.emailjs.com/api/v1.0/email/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          service_id: SERVICE_ID,
-          template_id: TEMPLATE_ID,
-          user_id: PUBLIC_KEY,
-          accessToken: PRIVATE_KEY,
+          service_id:      SERVICE_ID,
+          template_id:     TEMPLATE_ID,
+          user_id:         PUBLIC_KEY,
+          accessToken:     PRIVATE_KEY,
           template_params: { to_email: email, subject, message: body }
         })
       });
