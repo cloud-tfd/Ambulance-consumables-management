@@ -1,25 +1,30 @@
 name: 🚑 救護耗材自動寄信提醒
+
 on:
   schedule:
-    - cron: "0 0 * * 1"
+    - cron: "0 0 * * *"   # 每天 00:00 UTC = 台灣時間 08:00 執行
   workflow_dispatch:
+
 jobs:
   send-reminder:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+
     steps:
       - name: 📦 Checkout repository
         uses: actions/checkout@v4
+
       - name: 🟢 Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+
       - name: 📨 執行耗材到期提醒發信腳本
         env:
           FIREBASE_URL: ${{ secrets.FIREBASE_URL }}
           EMAILJS_SERVICE_ID: ${{ secrets.EMAILJS_SERVICE_ID }}
           EMAILJS_TEMPLATE_ID: ${{ secrets.EMAILJS_TEMPLATE_ID }}
           EMAILJS_PUBLIC_KEY: ${{ secrets.EMAILJS_PUBLIC_KEY }}
-          RECIPIENT_EMAILS: ${{ secrets.RECIPIENT_EMAILS }}
           EMAILJS_PRIVATE_KEY: ${{ secrets.EMAILJS_PRIVATE_KEY }}
+          RECIPIENT_EMAILS: ${{ secrets.RECIPIENT_EMAILS }}
         run: node .github/scripts/send-reminder.js
