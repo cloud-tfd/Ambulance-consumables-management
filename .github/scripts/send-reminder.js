@@ -98,6 +98,7 @@ async function main() {
 
   for (const email of RECIPIENT_EMAILS) {
     try {
+      onst PRIVATE_KEY = process.env.EMAILJS_PRIVATE_KEY;
       const res = await fetch("https://api.emailjs.com/api/v1.0/email/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -105,6 +106,7 @@ async function main() {
           service_id: SERVICE_ID,
           template_id: TEMPLATE_ID,
           user_id: PUBLIC_KEY,
+          accessToken: PRIVATE_KEY,
           template_params: { to_email: email, subject, message: body }
         })
       });
