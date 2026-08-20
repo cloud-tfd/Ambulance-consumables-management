@@ -146,18 +146,24 @@ body {
 /* Active User Card */
 .user-profile-card {
   margin: 1rem 0;
-  padding: 0.75rem;
+  padding: 0.85rem;
   background-color: var(--bg-primary);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.user-profile-top {
   display: flex;
   align-items: center;
   gap: 0.75rem;
 }
 
 .avatar {
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   background: linear-gradient(135deg, #6366f1, #a855f7);
   color: white;
   border-radius: 50%;
@@ -165,7 +171,8 @@ body {
   align-items: center;
   justify-content: center;
   font-weight: 700;
-  font-size: 0.9rem;
+  font-size: 0.95rem;
+  flex-shrink: 0;
 }
 
 .user-info {
@@ -174,7 +181,7 @@ body {
 }
 
 .user-name {
-  font-size: 0.85rem;
+  font-size: 0.875rem;
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -182,22 +189,59 @@ body {
 }
 
 .user-role-badge {
-  font-size: 0.7rem;
+  font-size: 0.725rem;
   color: var(--accent);
   font-weight: 500;
 }
 
-.user-switch-btn {
-  color: var(--text-muted);
+.user-profile-actions {
+  display: flex;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.user-action-btn {
+  flex: 1;
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
   cursor: pointer;
-  padding: 4px;
-  border-radius: 4px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-primary);
   transition: var(--transition);
 }
 
-.user-switch-btn:hover {
+.user-action-btn i {
+  width: 14px;
+  height: 14px;
+}
+
+.user-action-btn.switch-btn {
+  background: rgba(59, 130, 246, 0.12);
+  border-color: rgba(59, 130, 246, 0.3);
   color: var(--primary);
-  background-color: var(--bg-card-hover);
+}
+
+.user-action-btn.switch-btn:hover {
+  background: var(--primary);
+  color: #ffffff;
+}
+
+.user-action-btn.logout-btn {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.25);
+  color: var(--danger);
+}
+
+.user-action-btn.logout-btn:hover {
+  background: var(--danger);
+  color: #ffffff;
 }
 
 /* Sidebar Navigation */

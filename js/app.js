@@ -993,18 +993,29 @@ function renderUsersTable() {
       roleDesc = ROLES.VIEWER.description;
     }
 
+    const currentUser = store.getCurrentUser();
+    const isCurrent = currentUser && currentUser.id === u.id;
+
     return `
-      <tr>
-        <td><strong>${u.name}</strong></td>
+      <tr class="${isCurrent ? 'row-active-user' : ''}">
+        <td>
+          <strong>${u.name}</strong>
+          ${isCurrent ? '<span class="badge badge-success ml-1" style="font-size:0.65rem; padding: 2px 5px;">目前操作中</span>' : ''}
+        </td>
         <td><code>${u.email}</code></td>
         <td>${u.dept || '第一救護分隊'}</td>
         <td><span class="badge ${badgeClass}">${roleLabel}</span></td>
-        <td style="max-width: 250px;"><span class="text-subtitle">${roleDesc}</span></td>
+        <td style="max-width: 230px;"><span class="text-subtitle">${roleDesc}</span></td>
         <td class="text-right">
-          <button class="btn btn-sm btn-ghost rbac-manage-users" onclick="openUserEditModal('${u.id}')">
+          ${!isCurrent ? `
+            <button class="btn btn-sm btn-ghost" style="color: var(--primary);" onclick="switchActiveUser('${u.id}')" title="立即切換以此人員身分操作">
+              <i data-lucide="user-check"></i> 切換
+            </button>
+          ` : ''}
+          <button class="btn btn-sm btn-ghost rbac-manage-users" onclick="openUserEditModal('${u.id}')" title="編輯設定">
             <i data-lucide="edit"></i> 編輯
           </button>
-          <button class="btn btn-sm btn-ghost text-danger rbac-manage-users" onclick="deleteUser('${u.id}')">
+          <button class="btn btn-sm btn-ghost text-danger rbac-manage-users" onclick="deleteUser('${u.id}')" title="刪除人員">
             <i data-lucide="trash-2"></i> 刪除
           </button>
         </td>
