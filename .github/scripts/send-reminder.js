@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 /**
- * EMS 救護耗材自動到期提醒腳本
- * 每天由 GitHub Actions 執行，依照網頁設定的頻率決定是否寄信
+ * EMS 救護耗材自動到期提醒腳本（支援 Firebase 安全身分驗證）
  */
 
 const FIREBASE_URL     = process.env.FIREBASE_URL;
+const FIREBASE_API_KEY = process.env.FIREBASE_API_KEY;
+const BOT_EMAIL        = process.env.BOT_EMAIL;
+const BOT_PASSWORD     = process.env.BOT_PASSWORD;
 const SERVICE_ID       = process.env.EMAILJS_SERVICE_ID;
 const TEMPLATE_ID      = process.env.EMAILJS_TEMPLATE_ID;
 const PUBLIC_KEY       = process.env.EMAILJS_PUBLIC_KEY;
@@ -19,6 +21,35 @@ async function fetchJSON(url) {
   return res.json();
 }
 
+async function getFirebaseAuthToken() {
+  if (!FIREBASE_API_KEY || !BOT_EMAIL || !BOT_PASSWORD) {
+    console.log("ℹ️ 未提供 Firebase 登入資訊，將以公開模式嘗試讀取...");
+    return null;
+  }
+
+  try {
+    const authUrl = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FIREBASE_API_KEY}`;
+    const res = await fetch(authUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: BOT_EMAIL, password: BOT_PASSWORD, returnSecureToken: true })
+    });
+
+    if (!res.ok) {
+      const err = await res.text();
+      console.warn("⚠️ Firebase Auth 登入失敗:", err);
+      return null;
+    }
+
+    const data = await res.json();
+    console.log("🔐 Firebase 背景驗證成功，取得存取權限！");
+    return data.idToken;
+  } catch (err) {
+    console.warn("⚠️ Firebase Auth 異常:", err.message);
+    return null;
+  }
+}
+
 function daysUntilExpiry(dateStr) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -31,19 +62,19 @@ async function main() {
   console.log("=== 救護耗材自動提醒腳本啟動 ===");
   console.log("執行時間：", new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" }));
 
-  // 驗證環境變數
   if (!FIREBASE_URL) { console.error("❌ 缺少 FIREBASE_URL"); process.exit(1); }
   if (!SERVICE_ID || !TEMPLATE_ID || !PUBLIC_KEY) { console.error("❌ 缺少 EmailJS 設定"); process.exit(1); }
-  if (!PRIVATE_KEY) { console.error("❌ 缺少 EMAILJS_PRIVATE_KEY"); process.exit(1); }
   if (RECIPIENT_EMAILS.length === 0) { console.error("❌ 缺少收件者 Email"); process.exit(1); }
 
-  // 從 Firebase 讀取資料
+  // 1. 取得 Firebase 安全憑證
+  const idToken = await getFirebaseAuthToken();
   const base = FIREBASE_URL.replace(/\/$/, "");
-  console.log("\n📡 從 Firebase 讀取資料...");
+  const targetUrl = idToken ? `${base}/ems_inventory_data.json?auth=${idToken}` : `${base}/ems_inventory_data.json`;
 
+  console.log("\n📡 從 Firebase 讀取資料...");
   let data;
   try {
-    data = await fetchJSON(`${base}/ems_inventory_data.json`);
+    data = await fetchJSON(targetUrl);
   } catch (err) {
     console.error("❌ Firebase 讀取失敗:", err.message);
     process.exit(1);
@@ -54,11 +85,11 @@ async function main() {
     process.exit(0);
   }
 
-  console.log(`✅ 讀取到 ${data.supplies.length} 筆耗材資料`);
+  console.log(`✅ 成功讀取到 ${data.supplies.length} 筆耗材資料`);
 
-  // ── 讀取網頁上的提醒設定，決定今天是否寄信 ──────────────────
+  // 2. 判斷今天是否符合網頁設定的發信條件
   const settings  = data.reminders || {};
-  const enabled   = settings.enabled !== false; // 預設啟用
+  const enabled   = settings.enabled !== false;
   const frequency = settings.frequency || "weekly_monday";
 
   if (!enabled) {
@@ -66,10 +97,9 @@ async function main() {
     process.exit(0);
   }
 
-  // 取得台灣今天的星期與日期
-  const nowTW      = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
-  const dayOfWeek  = nowTW.getDay();   // 0=日,1=一,2=二,...,6=六
-  const dateOfMonth = nowTW.getDate(); // 1–31
+  const nowTW       = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
+  const dayOfWeek   = nowTW.getDay();
+  const dateOfMonth = nowTW.getDate();
 
   let shouldSendToday = false;
   if      (frequency === "daily")          shouldSendToday = true;
@@ -91,9 +121,7 @@ async function main() {
     process.exit(0);
   }
 
-  console.log(`📅 今天符合發信條件（頻率：${freqLabel}），繼續執行...`);
-
-  // ── 篩選即期 / 過期耗材 ──────────────────────────────────────
+  // 3. 篩選即期 / 過期耗材
   const alertItems = [];
   for (const s of data.supplies) {
     if (!s.expiry) continue;
@@ -113,7 +141,7 @@ async function main() {
     process.exit(0);
   }
 
-  // ── 組合郵件內容 ──────────────────────────────────────────────
+  // 4. 組合信件內容
   const subject = `【救護衛材警示】${expiredCount} 項過期 / ${expiringCount} 項即期 — 自動通知`;
 
   let body = `親愛的救護衛材管理員，您好：\n\n`;
@@ -137,7 +165,7 @@ async function main() {
   });
   body += `\n請前往「救護耗材智慧管理系統」進行補給作業。\n`;
 
-  // ── 發送郵件 ─────────────────────────────────────────────────
+  // 5. 透過 EmailJS 發送
   console.log(`\n📧 開始發送郵件給 ${RECIPIENT_EMAILS.length} 位收件者...`);
   let successCount = 0;
 
