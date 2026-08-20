@@ -1264,3 +1264,83 @@ function setupEventListeners() {
     });
   }
 }
+
+/**
+ * ============================================================
+ * FIREBASE AUTHENTICATION UI HANDLERS
+ * ============================================================
+ */
+async function handleUserLogin(event) {
+  event.preventDefault();
+  const email = document.getElementById("loginEmail").value.trim();
+  const password = document.getElementById("loginPassword").value.trim();
+  const btn = document.getElementById("btnLoginSubmit");
+  const btnText = document.getElementById("btnLoginText");
+  const errAlert = document.getElementById("loginErrorAlert");
+  const errText = document.getElementById("loginErrorText");
+
+  if (!email || !password) return;
+
+  // Loading state
+  btn.disabled = true;
+  btnText.textContent = "驗證登入中...";
+  errAlert.style.display = "none";
+
+  try {
+    if (typeof authManager === "undefined") {
+      throw new Error("驗證模組尚未載入，請重新整理解鎖");
+    }
+    await authManager.loginWithEmail(email, password);
+    // On success, onAuthStateChanged handles UI transition
+  } catch (err) {
+    errText.textContent = err.message || "帳號或密碼錯誤，請重新確認";
+    errAlert.style.display = "flex";
+    initLucideIcons();
+  } finally {
+    btn.disabled = false;
+    btnText.textContent = "登入系統";
+  }
+}
+
+async function handleUserLogout() {
+  if (!confirm("確定要登出系統嗎？")) return;
+
+  try {
+    if (typeof authManager !== "undefined") {
+      await authManager.logout();
+    }
+    showToast("已成功登出系統", "info");
+    initLucideIcons();
+  } catch (err) {
+    console.error("Logout error:", err);
+  }
+}
+
+async function handleForgotPassword() {
+  const emailInput = document.getElementById("loginEmail");
+  const prefilled = emailInput ? emailInput.value.trim() : "";
+  const email = prompt("請輸入您的管理員電子郵件 (Email) 以接收重設密碼信：", prefilled);
+  
+  if (!email) return;
+
+  try {
+    if (typeof authManager === "undefined") throw new Error("驗證模組尚未載入");
+    await authManager.sendPasswordReset(email.trim());
+    alert(`密碼重設信已寄出至【${email}】，請前往收件匣查收並依指示重新設定密碼。`);
+  } catch (err) {
+    alert("發送重設信失敗：" + err.message);
+  }
+}
+
+function togglePasswordVisibility(inputId, btnEl) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+
+  const isPassword = input.type === "password";
+  input.type = isPassword ? "text" : "password";
+
+  if (btnEl) {
+    btnEl.innerHTML = isPassword ? `<i data-lucide="eye-off"></i>` : `<i data-lucide="eye"></i>`;
+    initLucideIcons();
+  }
+}

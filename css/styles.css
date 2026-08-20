@@ -1005,3 +1005,174 @@ body {
   from { opacity: 0; transform: translateX(50px); }
   to { opacity: 1; transform: translateX(0); }
 }
+
+/* ==========================================================================
+   Firebase Authentication Modal / Overlay Styles
+   ========================================================================== */
+.login-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 1.5rem;
+  transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+
+body.theme-light .login-overlay {
+  background: rgba(241, 245, 249, 0.92);
+}
+
+.login-card {
+  width: 100%;
+  max-width: 440px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 2.25rem;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), 0 0 30px var(--primary-glow);
+  position: relative;
+  overflow: hidden;
+  animation: loginCardAppear 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes loginCardAppear {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.login-card-header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.login-logo-badge {
+  width: 60px;
+  height: 60px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, var(--primary), var(--accent));
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  margin-bottom: 1rem;
+  box-shadow: 0 8px 20px var(--primary-glow);
+}
+
+.login-logo-badge i {
+  width: 32px;
+  height: 32px;
+}
+
+.login-card-header h2 {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 0.35rem;
+}
+
+.login-card-header p {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.login-alert {
+  background: var(--danger-bg);
+  border: 1px solid var(--danger);
+  color: #fca5a5;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-md);
+  font-size: 0.85rem;
+  margin-bottom: 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.input-with-icon {
+  position: relative;
+}
+
+.input-with-icon .input-icon-left {
+  position: absolute;
+  left: 0.9rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
+  width: 18px;
+  height: 18px;
+}
+
+.input-with-icon .form-control {
+  padding-left: 2.75rem;
+  padding-right: 2.75rem;
+}
+
+.input-with-icon .btn-toggle-pwd {
+  position: absolute;
+  right: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+}
+
+.input-with-icon .btn-toggle-pwd:hover {
+  color: var(--text-primary);
+}
+
+.login-footer-links {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.825rem;
+  margin-top: 1.25rem;
+}
+
+.login-link {
+  color: var(--primary);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.login-link:hover {
+  text-decoration: underline;
+}
+
+.user-logout-btn {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  color: var(--danger);
+  font-size: 0.75rem;
+  padding: 3px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  transition: var(--transition);
+}
+
+.user-logout-btn:hover {
+  background: var(--danger);
+  color: #ffffff;
+}

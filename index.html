@@ -19,6 +19,10 @@
   <!-- Chart.js for Dashboard Analytics -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
+  <!-- Firebase App & Auth SDK (Compat v10) -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+
   <!-- Custom Stylesheet -->
   <link rel="stylesheet" href="css/styles.css">
 </head>
@@ -44,6 +48,9 @@
         <div class="user-info">
           <div class="user-name" id="currentUserName">張小明隊員</div>
           <div class="user-role-badge" id="currentUserRoleBadge">最高管理員</div>
+          <button class="user-logout-btn" onclick="handleUserLogout()" title="登出當前帳號">
+            <i data-lucide="log-out"></i> 登出
+          </button>
         </div>
         <div class="user-switch-btn" title="切換測試身分" onclick="openUserSwitchModal()">
           <i data-lucide="arrows-right-left"></i>
@@ -947,16 +954,67 @@
     </div>
   </div>
 
+  <!-- 8. Firebase Email/Password Authentication Overlay -->
+  <div class="login-overlay active" id="loginOverlay">
+    <div class="login-card">
+      <div class="login-card-header">
+        <div class="login-logo-badge">
+          <i data-lucide="shield-check"></i>
+        </div>
+        <h2>救護耗材智慧管理系統</h2>
+        <p>請使用已授權的電子郵件與密碼登入</p>
+      </div>
+
+      <!-- Login Error Alert -->
+      <div class="login-alert" id="loginErrorAlert" style="display: none;">
+        <i data-lucide="alert-circle"></i>
+        <span id="loginErrorText">帳號或密碼錯誤</span>
+      </div>
+
+      <form id="loginForm" onsubmit="handleUserLogin(event)">
+        <div class="form-group mb-3">
+          <label class="form-label" for="loginEmail"><i data-lucide="mail"></i> 電子郵件 (Email)</label>
+          <div class="input-with-icon">
+            <i data-lucide="at-sign" class="input-icon-left"></i>
+            <input type="email" id="loginEmail" class="form-control" placeholder="例: admin@ems.gov.tw" required autocomplete="email">
+          </div>
+        </div>
+
+        <div class="form-group mb-3">
+          <label class="form-label" for="loginPassword"><i data-lucide="lock"></i> 密碼 (Password)</label>
+          <div class="input-with-icon">
+            <i data-lucide="key-round" class="input-icon-left"></i>
+            <input type="password" id="loginPassword" class="form-control" placeholder="請輸入密碼" required autocomplete="current-password">
+            <button type="button" class="btn-toggle-pwd" onclick="togglePasswordVisibility('loginPassword', this)" title="顯示/隱藏密碼">
+              <i data-lucide="eye"></i>
+            </button>
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary mt-3" id="btnLoginSubmit" style="width: 100%; justify-content: center; padding: 0.75rem;">
+          <i data-lucide="log-in"></i>
+          <span id="btnLoginText">登入系統</span>
+        </button>
+
+        <div class="login-footer-links">
+          <a class="login-link" onclick="handleForgotPassword()"><i data-lucide="help-circle" style="width: 14px; height: 14px; display: inline-block; vertical-align: middle;"></i> 忘記密碼？</a>
+          <span class="text-subtitle" style="font-size: 0.75rem;">🔒 Firebase SSL 安全加密</span>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Toast Notification Container -->
   <div id="toastContainer" class="toast-container"></div>
 
-  <!-- JavaScript Modules (v=20260818 forces cache refresh) -->
-  <script src="js/mockData.js?v=20260818"></script>
-  <script src="js/state.js?v=20260818"></script>
-  <script src="js/sync.js?v=20260818"></script>
-  <script src="js/rbac.js?v=20260818"></script>
-  <script src="js/excel.js?v=20260818"></script>
-  <script src="js/reminder.js?v=20260818"></script>
-  <script src="js/app.js?v=20260818"></script>
+  <!-- JavaScript Modules (v=20260820 forces cache refresh) -->
+  <script src="js/mockData.js?v=20260820"></script>
+  <script src="js/state.js?v=20260820"></script>
+  <script src="js/auth.js?v=20260820"></script>
+  <script src="js/sync.js?v=20260820"></script>
+  <script src="js/rbac.js?v=20260820"></script>
+  <script src="js/excel.js?v=20260820"></script>
+  <script src="js/reminder.js?v=20260820"></script>
+  <script src="js/app.js?v=20260820"></script>
 </body>
 </html>
