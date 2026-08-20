@@ -1175,12 +1175,28 @@ function saveUser(event) {
   event.preventDefault();
   if (!rbac.checkActionAllowed("canManageUsers", "儲存人員")) return;
 
+  const userId = document.getElementById("userId").value;
+  const newRole = document.getElementById("userRole").value;
+  const users = store.getUsers();
+
+  // 防呆機制：若要降級現有的最高管理員，系統中必須至少還有另一位最高管理員
+  if (userId && newRole !== "admin") {
+    const existingUser = users.find(u => u.id === userId);
+    if (existingUser && existingUser.role === "admin") {
+      const adminCount = users.filter(u => u.role === "admin").length;
+      if (adminCount <= 1) {
+        showToast("【防呆保護】系統中必須至少保留一位最高管理員 (Super Admin)，無法降級為其他身分！", "danger");
+        return;
+      }
+    }
+  }
+
   const userData = {
-    id: document.getElementById("userId").value,
+    id: userId,
     name: document.getElementById("userName").value.trim(),
     email: document.getElementById("userEmail").value.trim(),
     dept: document.getElementById("userDept").value.trim(),
-    role: document.getElementById("userRole").value
+    role: newRole
   };
 
   store.saveUser(userData);
@@ -1198,6 +1214,16 @@ function deleteUser(userId) {
     return;
   }
 
+  const users = store.getUsers();
+  const target = users.find(u => u.id === userId);
+  if (target && target.role === "admin") {
+    const adminCount = users.filter(u => u.role === "admin").length;
+    if (adminCount <= 1) {
+      showToast("【防呆保護】無法刪除系統中唯一的最高管理員！", "danger");
+      return;
+    }
+  }
+
   if (confirm("確定要移除該位管理人員嗎？")) {
     store.deleteUser(userId);
     showToast("已移除該位管理人員", "info");
@@ -1211,7 +1237,7 @@ function openUserSwitchModal() {
   const currentUser = store.getCurrentUser();
   const container = document.getElementById("userSwitchModalList");
 
-  container.innerHTML = users.map(u => `
+  const listHtml = users.map(u => `
     <div class="user-profile-card mb-2 ${u.id === currentUser.id ? 'border-primary' : ''}" style="cursor: pointer;" onclick="switchActiveUser('${u.id}')">
       <div class="avatar">${u.name.charAt(0)}</div>
       <div class="user-info">
@@ -1221,6 +1247,15 @@ function openUserSwitchModal() {
       <i data-lucide="chevron-right"></i>
     </div>
   `).join('');
+
+  container.innerHTML = listHtml + `
+    <div class="mt-3 pt-3" style="border-top: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+      <span class="text-subtitle" style="font-size: 0.8rem;">若權限不慎鎖定：</span>
+      <button class="btn btn-sm btn-secondary" onclick="restoreCurrentAdmin()" title="將當前使用者快速提升為最高管理員">
+        <i data-lucide="shield-check"></i> 恢復為最高管理員
+      </button>
+    </div>
+  `;
 
   initLucideIcons();
   openModal("userSwitchModal");
@@ -1232,6 +1267,15 @@ function switchActiveUser(userId) {
   showToast(`已切換為【${user.name}】身分 (權限角色: ${user.role})`, "info");
   closeModal("userSwitchModal");
   renderAllViews();
+}
+
+function restoreCurrentAdmin() {
+  const restored = store.restoreAdminAccess();
+  if (restored) {
+    showToast(`已成功恢復【${restored.name}】的最高管理員 (Super Admin) 權限！`, "success");
+    closeModal("userSwitchModal");
+    renderAllViews();
+  }
 }
 
 // Excel Import Modal

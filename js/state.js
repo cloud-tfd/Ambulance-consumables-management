@@ -364,17 +364,41 @@ class Store {
 
   // --- Users & RBAC ---
   getUsers() {
-    return JSON.parse(localStorage.getItem(STORAGE_KEYS.USERS) || "[]");
+    let users = JSON.parse(localStorage.getItem(STORAGE_KEYS.USERS) || "[]");
+    // Auto-recovery: If no admin exists at all in the system, promote the first user to admin
+    if (users.length > 0 && !users.some(u => u.role === "admin")) {
+      users[0].role = "admin";
+      localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+    }
+    return users;
   }
 
   getCurrentUser() {
     const currentId = localStorage.getItem(STORAGE_KEYS.CURRENT_USER_ID);
     const users = this.getUsers();
-    return users.find(u => u.id === currentId) || users[0];
+    let user = users.find(u => u.id === currentId) || users[0];
+    if (!user) {
+      user = { id: "usr-admin-01", name: "系統管理員", email: "admin@ems.gov.tw", dept: "救護分隊", role: "admin" };
+    }
+    return user;
   }
 
   setCurrentUser(userId) {
     localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, userId);
+  }
+
+  restoreAdminAccess(targetUserId = null) {
+    const users = this.getUsers();
+    const currentId = targetUserId || localStorage.getItem(STORAGE_KEYS.CURRENT_USER_ID);
+    const target = users.find(u => u.id === currentId) || users[0];
+    if (target) {
+      target.role = "admin";
+      localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+      this.setCurrentUser(target.id);
+      this.triggerSync();
+      return target;
+    }
+    return null;
   }
 
   saveUser(userData) {

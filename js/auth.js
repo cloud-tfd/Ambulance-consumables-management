@@ -162,6 +162,12 @@ class AuthManager {
         store.saveUser(newProfile);
         store.setCurrentUser(newProfile.id);
       } else {
+        // If there are no other admins in the system, promote matched user to admin
+        const hasAdmin = users.some(u => u.role === "admin");
+        if (!hasAdmin) {
+          matchedUser.role = "admin";
+          store.saveUser(matchedUser);
+        }
         store.setCurrentUser(matchedUser.id);
       }
     }
