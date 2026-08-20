@@ -1,14 +1,14 @@
-name: 🚑 救護耗材自動寄信提醒
+name: 🚑 救護耗材自動寄信提醒 (每小時自動輪詢檢查)
 
 on:
   schedule:
-    - cron: "0 0 * * *"   # 每天 00:00 UTC = 台灣時間 08:00 執行
-  workflow_dispatch:
+    - cron: "0 0-15 * * *"  # 台灣時間 08:00 至 23:00 每小時整點自動檢查
+  workflow_dispatch:        # 支援手動點擊 Run workflow 立即測試
 
 jobs:
   send-reminder:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
 
     steps:
       - name: 📦 Checkout repository
@@ -22,12 +22,12 @@ jobs:
       - name: 📨 執行耗材到期提醒發信腳本
         env:
           FIREBASE_URL: ${{ secrets.FIREBASE_URL }}
+          FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
+          BOT_EMAIL: ${{ secrets.BOT_EMAIL }}
+          BOT_PASSWORD: ${{ secrets.BOT_PASSWORD }}
           EMAILJS_SERVICE_ID: ${{ secrets.EMAILJS_SERVICE_ID }}
           EMAILJS_TEMPLATE_ID: ${{ secrets.EMAILJS_TEMPLATE_ID }}
           EMAILJS_PUBLIC_KEY: ${{ secrets.EMAILJS_PUBLIC_KEY }}
           EMAILJS_PRIVATE_KEY: ${{ secrets.EMAILJS_PRIVATE_KEY }}
           RECIPIENT_EMAILS: ${{ secrets.RECIPIENT_EMAILS }}
-          FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
-          BOT_EMAIL: ${{ secrets.BOT_EMAIL }}
-          BOT_PASSWORD: ${{ secrets.BOT_PASSWORD }}
         run: node .github/scripts/send-reminder.js
