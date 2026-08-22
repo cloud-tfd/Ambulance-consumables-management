@@ -294,7 +294,11 @@ async function runSyncDiagnostics() {
   const panel = document.getElementById("syncDiagnosticsPanel");
   if (!panel) return;
 
-  const firebaseUrl = sync.getFirebaseUrl();
+  let token = null;
+  if (typeof authManager !== "undefined") {
+    try { token = await authManager.getCurrentIdToken(); } catch (e) {}
+  }
+  const firebaseUrl = sync.getFirebaseUrl(token);
   const isEnabled = sync.isEnabled;
   const localCount = store.getSupplies().length;
   const lastSync = localStorage.getItem(CLOUD_STORAGE_KEYS.LAST_SYNC_TIME);
@@ -302,7 +306,7 @@ async function runSyncDiagnostics() {
 
   panel.innerHTML = `
     <div>🔌 同步狀態：<b>${isEnabled ? "✅ 已啟用" : "❌ 已停用 (單機模式)"}</b></div>
-    <div>🔗 Firebase 網址：<b style="word-break:break-all">${firebaseUrl || "❌ 未設定"}</b></div>
+    <div>🔗 Firebase 網址：<b style="word-break:break-all">${firebaseUrl ? firebaseUrl.split('?')[0] : "❌ 未設定"}</b></div>
     <div>📦 本地耗材數量：<b>${localCount} 筆</b></div>
     <div>🕐 上次同步時間：<b>${lastSyncStr}</b></div>
     <div>📡 連線狀態：<b>${sync.connectionStatus === "online" ? "🟢 線上" : sync.connectionStatus === "error" ? "🔴 錯誤" : "🟡 測試中..."}</b></div>
@@ -328,7 +332,7 @@ async function runSyncDiagnostics() {
         🕐 雲端最後更新：<b>${cloudTime}</b>
       `;
     } else if (res.status === 401 || res.status === 403) {
-      diagEl.innerHTML = `❌ <b>Firebase 權限遭拒 (HTTP ${res.status})</b><br>請前往 Firebase Console → Realtime Database → Rules，將規則改為 .read: true, .write: true`;
+      diagEl.innerHTML = `❌ <b>Firebase 權限遭拒 (HTTP ${res.status})</b><br>請確認是否已在系統登入已授權的管理員帳號`;
     } else {
       diagEl.innerHTML = `⚠️ Firebase 回應錯誤：HTTP ${res.status}`;
     }
