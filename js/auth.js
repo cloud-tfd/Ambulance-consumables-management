@@ -135,7 +135,7 @@ class AuthManager {
     }
   }
 
-  _onUserLoggedIn(user) {
+  async _onUserLoggedIn(user) {
     console.log("[AuthManager] User logged in:", user.email);
 
     // Hide login overlay
@@ -145,7 +145,16 @@ class AuthManager {
       overlay.style.display = "none";
     }
 
-    // Match or create user profile in store
+    // 1. FIRST: Always pull latest authoritative data from Firebase Cloud before touching local state!
+    if (typeof sync !== "undefined" && sync.pullFromCloud) {
+      try {
+        await sync.pullFromCloud(true);
+      } catch (e) {
+        console.warn("[AuthManager] Initial pull error:", e);
+      }
+    }
+
+    // 2. Match or create user profile in store (WITHOUT triggering an immediate sync overwrite)
     if (typeof store !== "undefined") {
       const users = store.getUsers();
       let matchedUser = users.find(u => (u.email || "").toLowerCase() === (user.email || "").toLowerCase());
@@ -157,27 +166,27 @@ class AuthManager {
           name: user.displayName || user.email.split("@")[0] + " 隊員",
           email: user.email,
           dept: "救護分隊",
-          role: "admin" // Authenticated users get admin privileges by default
+          role: "admin"
         };
-        store.saveUser(newProfile);
+        users.push(newProfile);
+        localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
         store.setCurrentUser(newProfile.id);
       } else {
-        // If there are no other admins in the system, promote matched user to admin
         const hasAdmin = users.some(u => u.role === "admin");
         if (!hasAdmin) {
           matchedUser.role = "admin";
-          store.saveUser(matchedUser);
+          localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
         }
         store.setCurrentUser(matchedUser.id);
       }
     }
 
-    // Update UI
+    // 3. Update UI
     this._updateCurrentUserUI(user);
 
-    // Trigger sync & render
-    if (typeof sync !== "undefined" && sync.init) {
-      sync.init();
+    // 4. Start active polling
+    if (typeof sync !== "undefined" && sync.startPolling) {
+      sync.startPolling();
     }
     if (typeof renderAllViews === "function") {
       renderAllViews();
