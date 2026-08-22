@@ -1,9 +1,10 @@
-name: 🚑 救護耗材自動寄信提醒 (每小時自動輪詢檢查)
+name: 🚑 救護耗材自動寄信提醒 (每 15 分鐘精確檢查)
 
 on:
   schedule:
-    - cron: "0 0-15 * * *"  # 台灣時間 08:00 至 23:00 每小時整點自動檢查
-  workflow_dispatch:        # 支援手動點擊 Run workflow 立即測試
+    # 台灣時間 08:00 ~ 23:00 每 15 分鐘檢查一次 (07分, 22分, 37分, 52分 避開整點塞車)
+    - cron: "7,22,37,52 0-15 * * *"
+  workflow_dispatch:
 
 jobs:
   send-reminder:
