@@ -54,7 +54,7 @@ function importFullSystemJSON() {
           return;
         }
 
-        if (confirm(`確定要匯入「${file.name}」備份檔嗎？這將會更新所有耗材、庫位與人員資料。`)) {
+        if (confirm(`確定要匯入「${file.name}」備份檔嗎？這將會更新所有耗材、庫位與人員資料，並同步將其設定為雲端唯一主機資料。`)) {
           localStorage.setItem(STORAGE_KEYS.SUPPLIES, JSON.stringify(data.supplies));
           if (data.locations) localStorage.setItem(STORAGE_KEYS.LOCATIONS, JSON.stringify(data.locations));
           if (data.users) localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(data.users));
@@ -63,7 +63,10 @@ function importFullSystemJSON() {
 
           store.init();
           renderAllViews();
-          showToast("全系統資料已成功同步復原！", "success");
+          showToast("全系統備份已成功載入！正在同步覆蓋至雲端主機...", "info");
+          if (typeof sync !== "undefined" && sync.forcePushMaster) {
+            sync.forcePushMaster(true);
+          }
         }
       } catch (err) {
         console.error("Parse JSON Backup error:", err);

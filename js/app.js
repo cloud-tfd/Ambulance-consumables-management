@@ -264,13 +264,31 @@ function renderAllViews() {
  */
 function forcePushToCloud() {
   showToast("⏳ 正在推送資料至 Firebase...", "info");
-  sync.pushToCloud(true).then(function (ok) {
+  sync.pushToCloud(true, true).then(function (ok) {
     if (ok) {
       runSyncDiagnostics();
     } else {
       showToast("❌ 推送失敗，請開啟同步設定確認連線狀態", "danger");
     }
   });
+}
+
+/**
+ * Force Overwrite Cloud with THIS Computer as Master
+ */
+function forcePushMasterToCloud() {
+  const supplies = store.getSupplies();
+  if (!confirm(`【主機鎖定確認】\n\n確定要將「目前這台電腦上的 ${supplies.length} 筆衛材資料」強制覆蓋至 Firebase 雲端，並設定為全系統唯一的標準主機資料庫嗎？\n\n（所有其他電腦打開時將會以此版本為準強制同步）`)) {
+    return;
+  }
+  showToast("⏳ 正在將目前電腦資料設定為唯一主機並覆蓋雲端...", "info");
+  if (typeof sync !== "undefined" && sync.forcePushMaster) {
+    sync.forcePushMaster(true).then(function (ok) {
+      if (ok) {
+        runSyncDiagnostics();
+      }
+    });
+  }
 }
 
 /**

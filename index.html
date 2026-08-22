@@ -131,9 +131,9 @@
             <span id="cloudSyncStatusText">🟡 連線中...</span>
           </div>
 
-          <!-- Manual Force Push Button -->
-          <button class="btn btn-sm btn-secondary" title="立即推送本機資料到 Firebase 雲端" onclick="forcePushToCloud()" style="font-size:0.75rem; padding: 4px 10px;">
-            <i data-lucide="upload-cloud"></i> 立即同步↑
+          <!-- Master Force Overwrite Button -->
+          <button class="btn btn-sm btn-primary" title="以目前這台電腦的所有資料強制覆蓋雲端，作為全系統唯一的標準主機" onclick="forcePushMasterToCloud()" style="font-size:0.75rem; padding: 4px 10px; font-weight:600;">
+            <i data-lucide="crown"></i> 設為主機↑
           </button>
 
           <!-- Quick Action Buttons -->
@@ -752,6 +752,19 @@
           </div>
         </div>
 
+        <!-- Option 3: Force Overwrite Cloud as Master -->
+        <div class="card sub-card mt-3" style="border: 1px solid var(--primary); background: rgba(59, 130, 246, 0.08);">
+          <h4 style="font-weight: 700; font-size: 0.95rem;" class="flex items-center gap-2">
+            <i data-lucide="crown" class="text-primary"></i> 方式三：以目前這台電腦強制覆蓋雲端 (設為唯一主機)
+          </h4>
+          <p class="form-hint mt-1">若兩台電腦資料不一致，點擊此按鈕將以「目前這台電腦上的所有衛材」為準，強制推送到 Firebase 雲端，其他所有電腦開啟時將會強制同步此版本！</p>
+          <div class="mt-2">
+            <button type="button" class="btn btn-sm btn-primary" onclick="forcePushMasterToCloud(); closeModal('cloudSyncModal');">
+              <i data-lucide="crown"></i> 以目前電腦資料覆蓋雲端主機
+            </button>
+          </div>
+        </div>
+
         <!-- Live Diagnostics Panel -->
         <div class="card sub-card mt-3" style="background: var(--bg-secondary);">
           <h4 style="font-weight: 700; font-size: 0.9rem;" class="flex items-center gap-2 mb-2">
@@ -1013,14 +1026,14 @@
   <!-- Toast Notification Container -->
   <div id="toastContainer" class="toast-container"></div>
 
-  <!-- JavaScript Modules (v=20260822b forces cache refresh) -->
-  <script src="js/mockData.js?v=20260822b"></script>
-  <script src="js/state.js?v=20260822b"></script>
-  <script src="js/auth.js?v=20260822b"></script>
-  <script src="js/sync.js?v=20260822b"></script>
-  <script src="js/rbac.js?v=20260822b"></script>
-  <script src="js/excel.js?v=20260822b"></script>
-  <script src="js/reminder.js?v=20260822b"></script>
-  <script src="js/app.js?v=20260822b"></script>
+  <!-- JavaScript Modules (v=20260822c forces cache refresh) -->
+  <script src="js/mockData.js?v=20260822c"></script>
+  <script src="js/state.js?v=20260822c"></script>
+  <script src="js/auth.js?v=20260822c"></script>
+  <script src="js/sync.js?v=20260822c"></script>
+  <script src="js/rbac.js?v=20260822c"></script>
+  <script src="js/excel.js?v=20260822c"></script>
+  <script src="js/reminder.js?v=20260822c"></script>
+  <script src="js/app.js?v=20260822c"></script>
 </body>
 </html>

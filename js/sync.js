@@ -1,6 +1,6 @@
 /* ==========================================================================
    EMS Consumables Management System - Firebase Realtime Cloud Sync Engine
-   Version: 2.3 (Robust Multi-Device Realtime Sync & Queue)
+   Version: 2.4 (Master Lock & Overwrite Protection Engine)
    ========================================================================== */
 
 // Firebase Realtime Database URL
@@ -18,6 +18,7 @@ var CloudSync = (function () {
     this.isSyncing = false;
     this.pendingPush = false;
     this.hasPermissionError = false;
+    this.hasSyncedOnce = false; // Safety lock: prevent fresh un-synced device from overwriting cloud
     this.connectionStatus = "offline";
     this.lastPushTime = null;
     this.lastPullTime = null;
@@ -83,9 +84,21 @@ var CloudSync = (function () {
     }
   };
 
+  // ── FORCE PUSH MASTER: Overwrite Cloud with THIS Computer as Master ───
+  CloudSync.prototype.forcePushMaster = async function (showToast) {
+    this.hasSyncedOnce = true;
+    return this.pushToCloud(showToast, true);
+  };
+
   // ── PUSH: Send local data to Firebase ─────────────────────────────────
-  CloudSync.prototype.pushToCloud = async function (showToast) {
+  CloudSync.prototype.pushToCloud = async function (showToast, isExplicitMaster = false) {
     var self = this;
+
+    // Safety lock: if a device has never completed an initial pull and this is NOT an explicit user save, skip
+    if (!this.hasSyncedOnce && !isExplicitMaster) {
+      console.warn("[CloudSync] Push skipped: Device has not performed initial pull yet.");
+      return false;
+    }
 
     // If a sync is currently in-flight, queue a subsequent push
     if (this.isSyncing) {
@@ -128,6 +141,7 @@ var CloudSync = (function () {
 
       if (res.ok) {
         self.hasPermissionError = false;
+        self.hasSyncedOnce = true;
         self.connectionStatus = "online";
         self.lastSyncedCloudTime = nowTime;
         localStorage.setItem(CLOUD_STORAGE_KEYS.LAST_SYNC_TIME, String(nowTime));
@@ -137,7 +151,7 @@ var CloudSync = (function () {
         self.updateSyncUIStatus();
 
         if (showToast && typeof window.showToast === "function") {
-          window.showToast("✅ 已成功同步至 Firebase 雲端！", "success");
+          window.showToast(isExplicitMaster ? "👑 已成功以目前電腦資料強制覆蓋雲端 (設為主機)！" : "✅ 已成功同步至 Firebase 雲端！", "success");
         }
         if (self.broadcastChannel) {
           self.broadcastChannel.postMessage({ type: "DATA_UPDATED", timestamp: nowTime });
@@ -146,7 +160,7 @@ var CloudSync = (function () {
         // If another mutation occurred while in flight, execute it now
         if (self.pendingPush) {
           self.pendingPush = false;
-          setTimeout(function () { self.pushToCloud(false); }, 100);
+          setTimeout(function () { self.pushToCloud(false, false); }, 100);
         }
 
         return true;
@@ -175,7 +189,7 @@ var CloudSync = (function () {
   // ── PULL: Fetch latest data from Firebase ──────────────────────────────
   CloudSync.prototype.pullFromCloud = async function (silent) {
     var self = this;
-    if (this.isSyncing) return false; // Do not pull if we are currently pushing
+    if (this.isSyncing) return false;
 
     var token = null;
     if (typeof authManager !== "undefined") {
@@ -200,6 +214,7 @@ var CloudSync = (function () {
 
       var data = await res.json();
       self.hasPermissionError = false;
+      self.hasSyncedOnce = true;
       self.connectionStatus = "online";
       self.updateSyncUIStatus();
 
@@ -210,10 +225,7 @@ var CloudSync = (function () {
       var cloudTime = data.updatedAt || 0;
       var localSupplies = store.getSupplies();
 
-      // Multi-device sync condition:
-      // 1. Cloud timestamp differs from our last applied timestamp
-      // 2. OR supplies count differs
-      // 3. OR we haven't synced yet in this session
+      // Multi-device sync adoption condition:
       var shouldApply = false;
       if (cloudTime !== self.lastSyncedCloudTime) {
         shouldApply = true;
@@ -258,7 +270,6 @@ var CloudSync = (function () {
   CloudSync.prototype.startPolling = function () {
     var self = this;
     if (this.pollInterval) clearInterval(this.pollInterval);
-    // Poll every 3 seconds for realtime multi-device sync
     this.pollInterval = setInterval(function () {
       self.pullFromCloud(true);
     }, 3000);
