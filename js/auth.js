@@ -135,7 +135,7 @@ class AuthManager {
     }
   }
 
-  async _onUserLoggedIn(user) {
+  _onUserLoggedIn(user) {
     console.log("[AuthManager] User logged in:", user.email);
 
     // Hide login overlay
@@ -145,16 +145,7 @@ class AuthManager {
       overlay.style.display = "none";
     }
 
-    // 1. FIRST: Always pull latest authoritative data from Firebase Cloud before touching local state!
-    if (typeof sync !== "undefined" && sync.pullFromCloud) {
-      try {
-        await sync.pullFromCloud(true);
-      } catch (e) {
-        console.warn("[AuthManager] Initial pull error:", e);
-      }
-    }
-
-    // 2. Match or create user profile in store (WITHOUT triggering an immediate sync overwrite)
+    // Match or create user profile in store
     if (typeof store !== "undefined") {
       const users = store.getUsers();
       let matchedUser = users.find(u => (u.email || "").toLowerCase() === (user.email || "").toLowerCase());
@@ -166,27 +157,27 @@ class AuthManager {
           name: user.displayName || user.email.split("@")[0] + " 隊員",
           email: user.email,
           dept: "救護分隊",
-          role: "admin"
+          role: "admin" // Authenticated users get admin privileges by default
         };
-        users.push(newProfile);
-        localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+        store.saveUser(newProfile);
         store.setCurrentUser(newProfile.id);
       } else {
+        // If there are no other admins in the system, promote matched user to admin
         const hasAdmin = users.some(u => u.role === "admin");
         if (!hasAdmin) {
           matchedUser.role = "admin";
-          localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+          store.saveUser(matchedUser);
         }
         store.setCurrentUser(matchedUser.id);
       }
     }
 
-    // 3. Update UI
+    // Update UI
     this._updateCurrentUserUI(user);
 
-    // 4. Start active polling
-    if (typeof sync !== "undefined" && sync.startPolling) {
-      sync.startPolling();
+    // Trigger sync & render
+    if (typeof sync !== "undefined" && sync.init) {
+      sync.init();
     }
     if (typeof renderAllViews === "function") {
       renderAllViews();

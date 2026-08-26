@@ -64,7 +64,6 @@ function checkAndFireReminder() {
   } else if (frequency === "weekly_friday") {
     shouldSendToday = (dayOfWeek === 5); // Friday
   } else if (frequency === "biweekly") {
-    // Fire on Monday of even weeks (week number mod 2 === 0)
     const weekNum = Math.ceil((Math.floor((now - new Date(now.getFullYear(), 0, 1)) / 86400000) + 1) / 7);
     shouldSendToday = (dayOfWeek === 1 && weekNum % 2 === 0);
   } else if (frequency === "monthly") {
@@ -76,13 +75,23 @@ function checkAndFireReminder() {
   // Check if current time has reached or passed the scheduled time
   if (currentHHMM < scheduledTime) return;
 
-  // Check if we already sent today (prevent duplicate sends)
-  const lastSentDate = localStorage.getItem(REMINDER_LAST_SENT_KEY) || "";
-  if (lastSentDate === todayStr) return;
+  // ✅ 防重複寄信：同時檢查本機 localStorage 以及從 Firebase 同步來的 lastSentDate
+  // 這樣即使 GitHub Actions 已經寄過，瀏覽器開啟時也不會重複觸發
+  const localLastSent  = localStorage.getItem(REMINDER_LAST_SENT_KEY) || "";
+  const remoteLastSent = settings.lastSentDate || "";
+  if (localLastSent === todayStr || remoteLastSent === todayStr) {
+    console.log("[Reminder Scheduler] Already sent today (local:", localLastSent, "/ remote:", remoteLastSent, "), skipping.");
+    return;
+  }
 
   // All conditions met — fire the reminder!
   console.log("[Reminder Scheduler] Firing auto reminder for", todayStr);
+
+  // 同時寫入本機 localStorage 與 Firebase (透過 saveReminderSettings 同步)
   localStorage.setItem(REMINDER_LAST_SENT_KEY, todayStr);
+  const updatedSettings = Object.assign({}, settings, { lastSentDate: todayStr });
+  store.saveReminderSettings(updatedSettings);
+
   triggerImmediateEmailDispatch();
 }
 
@@ -264,31 +273,13 @@ function renderAllViews() {
  */
 function forcePushToCloud() {
   showToast("⏳ 正在推送資料至 Firebase...", "info");
-  sync.pushToCloud(true, true).then(function (ok) {
+  sync.pushToCloud(true).then(function (ok) {
     if (ok) {
       runSyncDiagnostics();
     } else {
       showToast("❌ 推送失敗，請開啟同步設定確認連線狀態", "danger");
     }
   });
-}
-
-/**
- * Force Overwrite Cloud with THIS Computer as Master
- */
-function forcePushMasterToCloud() {
-  const supplies = store.getSupplies();
-  if (!confirm(`【主機鎖定確認】\n\n確定要將「目前這台電腦上的 ${supplies.length} 筆衛材資料」強制覆蓋至 Firebase 雲端，並設定為全系統唯一的標準主機資料庫嗎？\n\n（所有其他電腦打開時將會以此版本為準強制同步）`)) {
-    return;
-  }
-  showToast("⏳ 正在將目前電腦資料設定為唯一主機並覆蓋雲端...", "info");
-  if (typeof sync !== "undefined" && sync.forcePushMaster) {
-    sync.forcePushMaster(true).then(function (ok) {
-      if (ok) {
-        runSyncDiagnostics();
-      }
-    });
-  }
 }
 
 /**
@@ -312,11 +303,7 @@ async function runSyncDiagnostics() {
   const panel = document.getElementById("syncDiagnosticsPanel");
   if (!panel) return;
 
-  let token = null;
-  if (typeof authManager !== "undefined") {
-    try { token = await authManager.getCurrentIdToken(); } catch (e) {}
-  }
-  const firebaseUrl = sync.getFirebaseUrl(token);
+  const firebaseUrl = sync.getFirebaseUrl();
   const isEnabled = sync.isEnabled;
   const localCount = store.getSupplies().length;
   const lastSync = localStorage.getItem(CLOUD_STORAGE_KEYS.LAST_SYNC_TIME);
@@ -324,7 +311,7 @@ async function runSyncDiagnostics() {
 
   panel.innerHTML = `
     <div>🔌 同步狀態：<b>${isEnabled ? "✅ 已啟用" : "❌ 已停用 (單機模式)"}</b></div>
-    <div>🔗 Firebase 網址：<b style="word-break:break-all">${firebaseUrl ? firebaseUrl.split('?')[0] : "❌ 未設定"}</b></div>
+    <div>🔗 Firebase 網址：<b style="word-break:break-all">${firebaseUrl || "❌ 未設定"}</b></div>
     <div>📦 本地耗材數量：<b>${localCount} 筆</b></div>
     <div>🕐 上次同步時間：<b>${lastSyncStr}</b></div>
     <div>📡 連線狀態：<b>${sync.connectionStatus === "online" ? "🟢 線上" : sync.connectionStatus === "error" ? "🔴 錯誤" : "🟡 測試中..."}</b></div>
@@ -350,7 +337,7 @@ async function runSyncDiagnostics() {
         🕐 雲端最後更新：<b>${cloudTime}</b>
       `;
     } else if (res.status === 401 || res.status === 403) {
-      diagEl.innerHTML = `❌ <b>Firebase 權限遭拒 (HTTP ${res.status})</b><br>請確認是否已在系統登入已授權的管理員帳號`;
+      diagEl.innerHTML = `❌ <b>Firebase 權限遭拒 (HTTP ${res.status})</b><br>請前往 Firebase Console → Realtime Database → Rules，將規則改為 .read: true, .write: true`;
     } else {
       diagEl.innerHTML = `⚠️ Firebase 回應錯誤：HTTP ${res.status}`;
     }

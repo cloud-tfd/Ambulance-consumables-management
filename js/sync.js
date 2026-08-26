@@ -1,6 +1,6 @@
 /* ==========================================================================
    EMS Consumables Management System - Firebase Realtime Cloud Sync Engine
-   Version: 2.4 (Master Lock & Overwrite Protection Engine)
+   Version: 2.2 (Authenticated & Secure)
    ========================================================================== */
 
 // Firebase Realtime Database URL
@@ -16,13 +16,10 @@ var CloudSync = (function () {
   function CloudSync() {
     this.pollInterval = null;
     this.isSyncing = false;
-    this.pendingPush = false;
     this.hasPermissionError = false;
-    this.hasSyncedOnce = false; // Safety lock: prevent fresh un-synced device from overwriting cloud
     this.connectionStatus = "offline";
     this.lastPushTime = null;
     this.lastPullTime = null;
-    this.lastSyncedCloudTime = parseInt(localStorage.getItem(CLOUD_STORAGE_KEYS.LAST_SYNC_TIME) || "0");
 
     localStorage.setItem(CLOUD_STORAGE_KEYS.SYNC_ENABLED, "true");
     this.isEnabled = true;
@@ -57,7 +54,7 @@ var CloudSync = (function () {
     var url = this.getFirebaseUrl();
     if (!url) return;
 
-    // Pull immediately on startup
+    // Pull from cloud immediately
     this.pullFromCloud(true).then(function () {
       self.startPolling();
     });
@@ -70,42 +67,26 @@ var CloudSync = (function () {
 
     if (this.hasPermissionError) {
       pill.className = "system-status-pill danger";
-      textEl.textContent = "❌ 權限遭拒 (請確認已登入)";
+      textEl.textContent = "❌ Firebase 權限遭拒 (請確認已登入)";
     } else if (this.connectionStatus === "online") {
       var timeStr = this.lastPushTime ? (" · " + this.lastPushTime) : "";
       pill.className = "system-status-pill success pulse";
-      textEl.textContent = "🟢 雲端已連線" + timeStr;
+      textEl.textContent = "🟢 雲端同步中" + timeStr;
     } else if (this.connectionStatus === "error") {
       pill.className = "system-status-pill danger";
-      textEl.textContent = "🔴 連線異常";
+      textEl.textContent = "🔴 Firebase 連線異常";
     } else {
       pill.className = "system-status-pill warning";
       textEl.textContent = "🟡 連線中...";
     }
   };
 
-  // ── FORCE PUSH MASTER: Overwrite Cloud with THIS Computer as Master ───
-  CloudSync.prototype.forcePushMaster = async function (showToast) {
-    this.hasSyncedOnce = true;
-    return this.pushToCloud(showToast, true);
-  };
-
-  // ── PUSH: Send local data to Firebase ─────────────────────────────────
-  CloudSync.prototype.pushToCloud = async function (showToast, isExplicitMaster = false) {
+  // ── PUSH: Send all local data to Firebase (with Auth Token) ──────────────
+  CloudSync.prototype.pushToCloud = async function (showToast) {
     var self = this;
+    if (this.isSyncing) return false;
 
-    // Safety lock: if a device has never completed an initial pull and this is NOT an explicit user save, skip
-    if (!this.hasSyncedOnce && !isExplicitMaster) {
-      console.warn("[CloudSync] Push skipped: Device has not performed initial pull yet.");
-      return false;
-    }
-
-    // If a sync is currently in-flight, queue a subsequent push
-    if (this.isSyncing) {
-      this.pendingPush = true;
-      return false;
-    }
-
+    // Get Auth token from authManager if available
     var token = null;
     if (typeof authManager !== "undefined") {
       try {
@@ -120,6 +101,7 @@ var CloudSync = (function () {
 
     this.isSyncing = true;
     var nowTime = Date.now();
+    localStorage.setItem(CLOUD_STORAGE_KEYS.LAST_SYNC_TIME, String(nowTime));
 
     var payload = JSON.stringify({
       supplies: store.getSupplies(),
@@ -141,28 +123,16 @@ var CloudSync = (function () {
 
       if (res.ok) {
         self.hasPermissionError = false;
-        self.hasSyncedOnce = true;
         self.connectionStatus = "online";
-        self.lastSyncedCloudTime = nowTime;
-        localStorage.setItem(CLOUD_STORAGE_KEYS.LAST_SYNC_TIME, String(nowTime));
-
         var d = new Date(nowTime);
         self.lastPushTime = d.getHours() + ":" + String(d.getMinutes()).padStart(2, "0") + ":" + String(d.getSeconds()).padStart(2, "0");
         self.updateSyncUIStatus();
-
         if (showToast && typeof window.showToast === "function") {
-          window.showToast(isExplicitMaster ? "👑 已成功以目前電腦資料強制覆蓋雲端 (設為主機)！" : "✅ 已成功同步至 Firebase 雲端！", "success");
+          window.showToast("✅ 已成功同步至 Firebase 雲端！", "success");
         }
         if (self.broadcastChannel) {
           self.broadcastChannel.postMessage({ type: "DATA_UPDATED", timestamp: nowTime });
         }
-
-        // If another mutation occurred while in flight, execute it now
-        if (self.pendingPush) {
-          self.pendingPush = false;
-          setTimeout(function () { self.pushToCloud(false, false); }, 100);
-        }
-
         return true;
       } else if (res.status === 401 || res.status === 403) {
         self.hasPermissionError = true;
@@ -189,8 +159,6 @@ var CloudSync = (function () {
   // ── PULL: Fetch latest data from Firebase ──────────────────────────────
   CloudSync.prototype.pullFromCloud = async function (silent) {
     var self = this;
-    if (this.isSyncing) return false;
-
     var token = null;
     if (typeof authManager !== "undefined") {
       try {
@@ -214,49 +182,28 @@ var CloudSync = (function () {
 
       var data = await res.json();
       self.hasPermissionError = false;
-      self.hasSyncedOnce = true;
       self.connectionStatus = "online";
       self.updateSyncUIStatus();
 
-      if (!data || !data.supplies || !Array.isArray(data.supplies)) {
+      if (!data || !data.supplies || !Array.isArray(data.supplies) || data.supplies.length === 0) {
         return false;
       }
 
+      var lastLocalTime = parseInt(localStorage.getItem(CLOUD_STORAGE_KEYS.LAST_SYNC_TIME) || "0");
       var cloudTime = data.updatedAt || 0;
-      var localSupplies = store.getSupplies();
 
-      // Multi-device sync adoption condition:
-      var shouldApply = false;
-      if (cloudTime !== self.lastSyncedCloudTime) {
-        shouldApply = true;
-      } else if (data.supplies.length !== localSupplies.length) {
-        shouldApply = true;
-      }
-
-      if (shouldApply && data.supplies.length > 0) {
+      if (cloudTime > lastLocalTime) {
         localStorage.setItem(STORAGE_KEYS.SUPPLIES, JSON.stringify(data.supplies));
-        if (data.locations && Array.isArray(data.locations)) {
-          localStorage.setItem(STORAGE_KEYS.LOCATIONS, JSON.stringify(data.locations));
-        }
-        if (data.users && Array.isArray(data.users)) {
-          localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(data.users));
-        }
-        if (data.reminders && typeof data.reminders === "object") {
-          localStorage.setItem(STORAGE_KEYS.REMINDER_SETTINGS, JSON.stringify(data.reminders));
-        }
-        if (data.auditLogs && Array.isArray(data.auditLogs)) {
-          localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(data.auditLogs));
-        }
+        if (data.locations) localStorage.setItem(STORAGE_KEYS.LOCATIONS, JSON.stringify(data.locations));
+        if (data.users) localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(data.users));
+        if (data.reminders) localStorage.setItem(STORAGE_KEYS.REMINDER_SETTINGS, JSON.stringify(data.reminders));
+        if (data.auditLogs) localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(data.auditLogs));
 
-        self.lastSyncedCloudTime = cloudTime;
         localStorage.setItem(CLOUD_STORAGE_KEYS.LAST_SYNC_TIME, String(cloudTime));
 
-        if (typeof renderAllViews === "function") {
-          renderAllViews();
-        }
-
+        if (typeof renderAllViews === "function") renderAllViews();
         if (!silent && typeof window.showToast === "function") {
-          window.showToast("已從 Firebase 雲端同步最新衛材資料！", "success");
+          window.showToast("已從 Firebase 雲端同步最新資料！", "success");
         }
         return true;
       }
@@ -272,7 +219,7 @@ var CloudSync = (function () {
     if (this.pollInterval) clearInterval(this.pollInterval);
     this.pollInterval = setInterval(function () {
       self.pullFromCloud(true);
-    }, 3000);
+    }, 4000);
   };
 
   CloudSync.prototype.setCustomFirebaseUrl = function (url) {
