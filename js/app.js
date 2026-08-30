@@ -48,7 +48,10 @@ function checkAndFireReminder() {
   if (!settings.enabled) return;
 
   const now = new Date();
-  const todayStr = now.toISOString().split("T")[0]; // "YYYY-MM-DD"
+  // ✅ Bug 2 修復：使用本機時間建立日期字串，避免 toISOString() 回傳 UTC 造成跨日錯誤
+  const todayStr = now.getFullYear() + "-"
+    + String(now.getMonth() + 1).padStart(2, "0") + "-"
+    + String(now.getDate()).padStart(2, "0");
   const currentHHMM = now.getHours().toString().padStart(2, "0") + ":" + now.getMinutes().toString().padStart(2, "0");
   const scheduledTime = settings.time || "08:00";
   const frequency = settings.frequency || "weekly_monday";
@@ -76,7 +79,6 @@ function checkAndFireReminder() {
   if (currentHHMM < scheduledTime) return;
 
   // ✅ 防重複寄信：同時檢查本機 localStorage 以及從 Firebase 同步來的 lastSentDate
-  // 這樣即使 GitHub Actions 已經寄過，瀏覽器開啟時也不會重複觸發
   const localLastSent  = localStorage.getItem(REMINDER_LAST_SENT_KEY) || "";
   const remoteLastSent = settings.lastSentDate || "";
   if (localLastSent === todayStr || remoteLastSent === todayStr) {
@@ -87,10 +89,10 @@ function checkAndFireReminder() {
   // All conditions met — fire the reminder!
   console.log("[Reminder Scheduler] Firing auto reminder for", todayStr);
 
-  // 同時寫入本機 localStorage 與 Firebase (透過 saveReminderSettings 同步)
+  // ✅ Bug 1 修復：只更新 lastSentDate，不覆蓋整個 settings，避免 intervals.join() 崩潰
   localStorage.setItem(REMINDER_LAST_SENT_KEY, todayStr);
   const updatedSettings = Object.assign({}, settings, { lastSentDate: todayStr });
-  store.saveReminderSettings(updatedSettings);
+  store.saveReminderSettingsSilent(updatedSettings);  // 使用不寫 audit log 的靜默版本
 
   triggerImmediateEmailDispatch();
 }

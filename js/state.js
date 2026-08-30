@@ -433,9 +433,18 @@ class Store {
 
   saveReminderSettings(settings) {
     localStorage.setItem(STORAGE_KEYS.REMINDER_SETTINGS, JSON.stringify(settings));
-    
     const currentUser = this.getCurrentUser();
-    this.addAuditLog(currentUser.name, "更新提醒規則", `提醒天數區間: [${settings.intervals.join(', ')}] 天前`, "--");
+    // ✅ Bug 1 修復：intervals 可能不存在（例如只更新 lastSentDate），加上防呆
+    const intervalStr = (settings.intervals && settings.intervals.length > 0)
+      ? settings.intervals.join(', ')
+      : "未變更";
+    this.addAuditLog(currentUser.name, "更新提醒規則", `提醒天數區間: [${intervalStr}] 天前`, "--");
+    this.triggerSync();
+  }
+
+  // ✅ 新增：靜默版本，只儲存不寫 audit log（供自動排程更新 lastSentDate 使用）
+  saveReminderSettingsSilent(settings) {
+    localStorage.setItem(STORAGE_KEYS.REMINDER_SETTINGS, JSON.stringify(settings));
     this.triggerSync();
   }
 
