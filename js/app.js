@@ -12,8 +12,6 @@ let currentTransferSourceQty = 0;
 document.addEventListener("DOMContentLoaded", () => {
   initLucideIcons();
   initThemePref();
-  sync.init();
-  renderAllViews();
   setupEventListeners();
 
   // Request Browser Push Notification permission if available
@@ -21,8 +19,16 @@ document.addEventListener("DOMContentLoaded", () => {
     Notification.requestPermission();
   }
 
-  // Start automatic reminder scheduler
-  startReminderScheduler();
+  // ✅ Priority 3 修復：等待 Firebase 第一次拉取完成後再啟動提醒排程
+  // 確保 lastSentDate 是最新值（GitHub Actions 可能已寄過），避免重複寄信
+  sync.init().then(function() {
+    renderAllViews();
+    startReminderScheduler();
+  }).catch(function() {
+    // Firebase 連線失敗時仍正常啟動（使用 localStorage 內的設定）
+    renderAllViews();
+    startReminderScheduler();
+  });
 });
 
 /**

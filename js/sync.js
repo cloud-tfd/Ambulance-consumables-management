@@ -52,10 +52,14 @@ var CloudSync = (function () {
     var self = this;
     this.updateSyncUIStatus();
     var url = this.getFirebaseUrl();
-    if (!url) return;
+    if (!url) {
+      // No URL configured — resolve immediately so app.js .then() runs
+      return Promise.resolve(false);
+    }
 
-    // Pull from cloud immediately
-    this.pullFromCloud(true).then(function () {
+    // Pull from cloud immediately, then start polling
+    // ✅ Return the Promise so callers (app.js) can wait for the first pull
+    return this.pullFromCloud(true).then(function () {
       self.startPolling();
     });
   };
@@ -103,11 +107,16 @@ var CloudSync = (function () {
     var nowTime = Date.now();
     localStorage.setItem(CLOUD_STORAGE_KEYS.LAST_SYNC_TIME, String(nowTime));
 
+    // ✅ Priority 4 修復：推送時排除 lastSentDate，避免舊裝置的值覆蓋 GitHub Actions 寫入的新值
+    var reminderSettings = store.getReminderSettings();
+    var remindersToSync = Object.assign({}, reminderSettings);
+    delete remindersToSync.lastSentDate;  // lastSentDate 由 Actions 和瀏覽器排程器各自管理
+
     var payload = JSON.stringify({
       supplies: store.getSupplies(),
       locations: store.getLocations(),
       users: store.getUsers(),
-      reminders: store.getReminderSettings(),
+      reminders: remindersToSync,
       auditLogs: store.getAuditLogs().slice(0, 50),
       updatedAt: nowTime
     });
