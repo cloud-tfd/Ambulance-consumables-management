@@ -57,11 +57,38 @@ function daysUntilExpiry(dateStr) {
   return Math.ceil((exp - today) / 86400000);
 }
 
+// ✅ Bug 3 修復：統一的 lastSentDate 寫入函式
+// 優先使用帶 auth token 的認證寫入，若無 token 則嘗試公開寫入
+async function writeLastSentDate(base, idToken, value) {
+  const url = idToken
+    ? `${base}/ems_inventory_data/reminders/lastSentDate.json?auth=${idToken}`
+    : `${base}/ems_inventory_data/reminders/lastSentDate.json`;
+  try {
+    console.log(`📝 正在記錄發送狀態至 Firebase (lastSentDate: ${JSON.stringify(value)})...`);
+    const res = await fetch(url, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(value)
+    });
+    if (res.ok) {
+      console.log("✅ 狀態記錄完成！");
+      return true;
+    }
+    const errText = await res.text();
+    console.warn(`⚠️ Firebase 寫入回應錯誤 (${res.status}): ${errText}`);
+    console.warn("💡 提示：請在 GitHub Secrets 設定 BOT_EMAIL / BOT_PASSWORD / FIREBASE_API_KEY 以啟用認證寫入");
+    return false;
+  } catch (e) {
+    console.warn("⚠️ 記錄上次發送時間至 Firebase 失敗:", e.message);
+    return false;
+  }
+}
+
 async function main() {
   console.log("==================================================");
   console.log("🚑 EMS 救護耗材自動提醒掃描引擎");
   console.log("執行時間：", new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" }));
-  if (IS_MANUAL_RUN) console.log("👉 模式：手動觸發測試 (跳過時間比對)");
+  if (IS_MANUAL_RUN) console.log("👉 模式：手動手動觸發 (跳過時間比對)");
   console.log("==================================================");
 
   if (!FIREBASE_URL) { console.error("❌ 缺少 FIREBASE_URL"); process.exit(1); }
@@ -89,18 +116,21 @@ async function main() {
 
   console.log(`✅ 成功讀取到 ${data.supplies.length} 筆耗材資料`);
 
-  // 2. 讀取網頁上設定的規則
+  // 2. 讀取網頁上設定的規則 (頻率、時間、是否啟用、上次發送日期)
   const settings     = data.reminders || {};
   const enabled      = settings.enabled !== false;
   const frequency    = settings.frequency || "weekly_monday";
-  const targetTime   = settings.time || "08:00";
+  const targetTime   = settings.time || "08:00"; // 網頁上設定的時間，例如 "08:30"
   const lastSentDate = settings.lastSentDate || "";
 
   // 取得台灣目前的日期與時間 (UTC+8)
   const nowTW        = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
-  const todayStr     = nowTW.toISOString().split("T")[0]; // "YYYY-MM-DD"
+  // ✅ Bug 4 修復：直接從台灣時間物件取 YYYY-MM-DD，避免 toISOString() 回傳 UTC 造成跨日錯誤
+  const todayStr     = nowTW.getFullYear() + "-"
+    + String(nowTW.getMonth() + 1).padStart(2, "0") + "-"
+    + String(nowTW.getDate()).padStart(2, "0");
   const currentHHMM  = nowTW.getHours().toString().padStart(2, "0") + ":" + nowTW.getMinutes().toString().padStart(2, "0");
-  const dayOfWeek    = nowTW.getDay();
+  const dayOfWeek    = nowTW.getDay();   // 0=日, 1=一, ..., 6=六
   const dateOfMonth  = nowTW.getDate();
 
   const freqLabel = {
@@ -118,13 +148,14 @@ async function main() {
   console.log(`   - 當前台灣時間：${currentHHMM}`);
   console.log(`   - 上次寄信日期：${lastSentDate || "尚無紀錄"}`);
 
-  // 若不是手動測試，則進行排程條件比對
+  // 若不是手動測試，則必須通過所有排程檢查
   if (!IS_MANUAL_RUN) {
     if (!enabled) {
       console.log("\n🛑 提醒功能已在網頁設定中停用，跳過發信");
       process.exit(0);
     }
 
+    // 檢查頻率 (星期幾)
     let shouldSendToday = false;
     if      (frequency === "daily")          shouldSendToday = true;
     else if (frequency === "weekly_monday")  shouldSendToday = (dayOfWeek === 1);
@@ -140,13 +171,13 @@ async function main() {
       process.exit(0);
     }
 
-    // 檢查是否已達到設定的時間
+    // 檢查是否已達到設定的時間 (例如設定 08:30，當前 08:00 就不寄，09:00 時才寄)
     if (currentHHMM < targetTime) {
       console.log(`\n⏳ 尚未到達預定發信時間 (設定: ${targetTime}, 當前: ${currentHHMM})，等待下一輪輪詢`);
       process.exit(0);
     }
 
-    // 檢查今天是否已經發送過
+    // 檢查今天是否已經發送過 (避免每小時重複發送)
     if (lastSentDate === todayStr) {
       console.log(`\n✅ 今天 (${todayStr}) 已經成功發送過提醒信，無需重複發送`);
       process.exit(0);
@@ -172,6 +203,8 @@ async function main() {
 
   if (alertItems.length === 0) {
     console.log("✅ 目前所有救護耗材均在安全效期內，無需發送信件");
+    // ✅ Bug 5 修復：即使沒有需要告警的耗材，也記錄今天已執行，避免每小時重複掃描
+    await writeLastSentDate(base, idToken, todayStr);
     process.exit(0);
   }
 
@@ -200,7 +233,18 @@ async function main() {
   });
   body += `\n請造訪「救護耗材智慧管理系統」執行衛材補給作業。\n`;
 
-  // 5. 發送 Email
+  // 5. 透過 EmailJS REST API 發送給收件者
+  // ✅ 先「佔位」：寄信前先把今天寫入 lastSentDate（手動測試除外）。
+  // 寫入失敗就中止，避免「寄了卻記不下來」而造成每 15 分鐘重複寄信。
+  let claimed = false;
+  if (!IS_MANUAL_RUN) {
+    claimed = await writeLastSentDate(base, idToken, todayStr);
+    if (!claimed) {
+      console.error("❌ 無法寫入寄信記錄 (Firebase 權限/憑證問題)，為避免重複寄信，本輪不寄出。");
+      process.exit(1);
+    }
+  }
+
   console.log(`\n📧 開始發送郵件給 ${RECIPIENT_EMAILS.length} 位管理人員...`);
   let successCount = 0;
 
@@ -234,22 +278,9 @@ async function main() {
 
   console.log(`\n=== 寄信結果：${successCount}/${RECIPIENT_EMAILS.length} 封郵件已成功寄出 ===`);
 
-  // 6. 記錄今天已發送至 Firebase
-  if (successCount > 0) {
-    if (idToken) {
-      try {
-        console.log(`📝 正在記錄發送狀態至 Firebase (lastSentDate: ${todayStr})...`);
-        await fetch(`${base}/ems_inventory_data/reminders/lastSentDate.json?auth=${idToken}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(todayStr)
-        });
-        console.log("✅ 狀態記錄完成！");
-      } catch (e) {
-        console.warn("⚠️ 記錄上次發送時間至 Firebase 失敗:", e.message);
-      }
-    }
-  } else {
+  // 6. 全部失敗：把佔位的記錄還原，讓下一輪輪詢(15 分鐘後)自動重試
+  if (successCount === 0) {
+    if (claimed) await writeLastSentDate(base, idToken, lastSentDate || null);
     process.exit(1);
   }
 }
