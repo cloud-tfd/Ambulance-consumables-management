@@ -107,23 +107,27 @@ var CloudSync = (function () {
     var nowTime = Date.now();
     localStorage.setItem(CLOUD_STORAGE_KEYS.LAST_SYNC_TIME, String(nowTime));
 
-    // ✅ Priority 4 修復：推送時排除 lastSentDate，避免舊裝置的值覆蓋 GitHub Actions 寫入的新值
-    var reminderSettings = store.getReminderSettings();
-    var remindersToSync = Object.assign({}, reminderSettings);
-    delete remindersToSync.lastSentDate;  // lastSentDate 由 Actions 和瀏覽器排程器各自管理
-
-    var payload = JSON.stringify({
+    // ✅ 關鍵修復：改用 PATCH「多路徑更新」，而不是 PUT 整包覆蓋。
+    // 舊作法 (PUT) 會把整個節點換掉，連 GitHub Actions 剛寫入的 reminders/lastSentDate 一起刪除，
+    // 造成「已寄信」記錄消失 → 之後又重複寄信。
+    // PATCH 且 reminders 拆成逐欄位路徑，就不會動到 lastSentDate。
+    var payloadObj = {
       supplies: store.getSupplies(),
       locations: store.getLocations(),
       users: store.getUsers(),
-      reminders: remindersToSync,
       auditLogs: store.getAuditLogs().slice(0, 50),
       updatedAt: nowTime
+    };
+    var reminderSettings = store.getReminderSettings();
+    Object.keys(reminderSettings).forEach(function (k) {
+      if (k === "lastSentDate") return;           // 此欄位只由「寄信端」寫入
+      payloadObj["reminders/" + k] = reminderSettings[k];
     });
+    var payload = JSON.stringify(payloadObj);
 
     try {
       var res = await fetch(url, {
-        method: "PUT",
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: payload
       });
@@ -194,6 +198,17 @@ var CloudSync = (function () {
       self.connectionStatus = "online";
       self.updateSyncUIStatus();
 
+      // ✅ 關鍵修復：lastSentDate 由 GitHub Actions 寫入，不會更新 updatedAt，
+      // 因此不論 updatedAt 是否較新，每次都要把雲端的 lastSentDate 併入本機（取較新日期）。
+      if (data && data.reminders && data.reminders.lastSentDate) {
+        var localSettings = store.getReminderSettings();
+        var remoteDate = String(data.reminders.lastSentDate);
+        if (!localSettings.lastSentDate || remoteDate > localSettings.lastSentDate) {
+          localSettings.lastSentDate = remoteDate;
+          localStorage.setItem(STORAGE_KEYS.REMINDER_SETTINGS, JSON.stringify(localSettings));
+        }
+      }
+
       if (!data || !data.supplies || !Array.isArray(data.supplies) || data.supplies.length === 0) {
         return false;
       }
@@ -205,7 +220,13 @@ var CloudSync = (function () {
         localStorage.setItem(STORAGE_KEYS.SUPPLIES, JSON.stringify(data.supplies));
         if (data.locations) localStorage.setItem(STORAGE_KEYS.LOCATIONS, JSON.stringify(data.locations));
         if (data.users) localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(data.users));
-        if (data.reminders) localStorage.setItem(STORAGE_KEYS.REMINDER_SETTINGS, JSON.stringify(data.reminders));
+        if (data.reminders) {
+          // 保留本機已知的較新 lastSentDate，避免被覆蓋回舊值
+          var keep = store.getReminderSettings().lastSentDate || "";
+          var merged = Object.assign({}, data.reminders);
+          if (keep && (!merged.lastSentDate || keep > merged.lastSentDate)) merged.lastSentDate = keep;
+          localStorage.setItem(STORAGE_KEYS.REMINDER_SETTINGS, JSON.stringify(merged));
+        }
         if (data.auditLogs) localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(data.auditLogs));
 
         localStorage.setItem(CLOUD_STORAGE_KEYS.LAST_SYNC_TIME, String(cloudTime));
@@ -219,6 +240,44 @@ var CloudSync = (function () {
       return false;
     } catch (err) {
       console.warn("[Firebase Pull Error]:", err);
+      return false;
+    }
+  };
+
+  // ── 即時讀取 / 寫入雲端 lastSentDate（瀏覽器寄信前後使用） ─────────────
+  CloudSync.prototype._lastSentUrl = async function () {
+    var token = null;
+    if (typeof authManager !== "undefined") {
+      try { token = await authManager.getCurrentIdToken(); } catch (e) {}
+    }
+    var base = ((localStorage.getItem(CLOUD_STORAGE_KEYS.FIREBASE_URL) || "").trim() || FIREBASE_DATABASE_URL).trim();
+    if (base.charAt(base.length - 1) === "/") base = base.slice(0, -1);
+    var url = base + "/ems_inventory_data/reminders/lastSentDate.json";
+    if (token) url += "?auth=" + encodeURIComponent(token);
+    return url;
+  };
+
+  // 回傳雲端 lastSentDate 字串；讀取失敗回傳 null（呼叫端應視為「不確定」而不要寄信）
+  CloudSync.prototype.fetchRemoteLastSentDate = async function () {
+    try {
+      var res = await fetch(await this._lastSentUrl(), { cache: "no-store" });
+      if (!res.ok) return null;
+      var v = await res.json();
+      return v ? String(v) : "";
+    } catch (e) {
+      return null;
+    }
+  };
+
+  CloudSync.prototype.writeRemoteLastSentDate = async function (dateStr) {
+    try {
+      var res = await fetch(await this._lastSentUrl(), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(dateStr)
+      });
+      return res.ok;
+    } catch (e) {
       return false;
     }
   };

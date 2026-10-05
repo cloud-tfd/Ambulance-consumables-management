@@ -49,58 +49,77 @@ function startReminderScheduler() {
   setInterval(checkAndFireReminder, 60 * 1000);
 }
 
-function checkAndFireReminder() {
-  const settings = store.getReminderSettings();
-  if (!settings.enabled) return;
+// 伺服器端 (GitHub Actions) 擁有第一優先權；瀏覽器只在預定時間「逾時超過此分鐘數」仍未寄出時才補寄
+const REMINDER_BROWSER_GRACE_MIN = 20;
+let reminderCheckBusy = false;
 
-  const now = new Date();
-  // ✅ Bug 2 修復：使用本機時間建立日期字串，避免 toISOString() 回傳 UTC 造成跨日錯誤
-  const todayStr = now.getFullYear() + "-"
-    + String(now.getMonth() + 1).padStart(2, "0") + "-"
-    + String(now.getDate()).padStart(2, "0");
-  const currentHHMM = now.getHours().toString().padStart(2, "0") + ":" + now.getMinutes().toString().padStart(2, "0");
-  const scheduledTime = settings.time || "08:00";
-  const frequency = settings.frequency || "weekly_monday";
+async function checkAndFireReminder() {
+  if (reminderCheckBusy) return;
+  reminderCheckBusy = true;
+  try {
+    const settings = store.getReminderSettings();
+    if (!settings.enabled) return;
 
-  // Check if today is the correct day
-  const dayOfWeek = now.getDay(); // 0=Sun,1=Mon,...,6=Sat
-  let shouldSendToday = false;
+    const now = new Date();
+    const todayStr = now.getFullYear() + "-"
+      + String(now.getMonth() + 1).padStart(2, "0") + "-"
+      + String(now.getDate()).padStart(2, "0");
+    const scheduledTime = settings.time || "08:00";
+    const frequency = settings.frequency || "weekly_monday";
 
-  if (frequency === "daily") {
-    shouldSendToday = true;
-  } else if (frequency === "weekly_monday") {
-    shouldSendToday = (dayOfWeek === 1); // Monday
-  } else if (frequency === "weekly_friday") {
-    shouldSendToday = (dayOfWeek === 5); // Friday
-  } else if (frequency === "biweekly") {
-    const weekNum = Math.ceil((Math.floor((now - new Date(now.getFullYear(), 0, 1)) / 86400000) + 1) / 7);
-    shouldSendToday = (dayOfWeek === 1 && weekNum % 2 === 0);
-  } else if (frequency === "monthly") {
-    shouldSendToday = (now.getDate() === 1); // First day of month
+    const dayOfWeek = now.getDay(); // 0=Sun,1=Mon,...,6=Sat
+    let shouldSendToday = false;
+    if (frequency === "daily") {
+      shouldSendToday = true;
+    } else if (frequency === "weekly_monday") {
+      shouldSendToday = (dayOfWeek === 1);
+    } else if (frequency === "weekly_friday") {
+      shouldSendToday = (dayOfWeek === 5);
+    } else if (frequency === "biweekly") {
+      const weekNum = Math.ceil((Math.floor((now - new Date(now.getFullYear(), 0, 1)) / 86400000) + 1) / 7);
+      shouldSendToday = (dayOfWeek === 1 && weekNum % 2 === 0);
+    } else if (frequency === "monthly") {
+      shouldSendToday = (now.getDate() === 1);
+    }
+    if (!shouldSendToday) return;
+
+    // 以「分鐘」比較，並要求已逾預定時間 + 寬限期，讓伺服器先寄
+    const parts = scheduledTime.split(":");
+    const scheduledMin = parseInt(parts[0], 10) * 60 + parseInt(parts[1] || "0", 10);
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    if (nowMin < scheduledMin + REMINDER_BROWSER_GRACE_MIN) return;
+
+    // 本機快速檢查
+    const localLastSent = localStorage.getItem(REMINDER_LAST_SENT_KEY) || "";
+    if (localLastSent === todayStr || settings.lastSentDate === todayStr) return;
+
+    // ✅ 寄信前「即時」向雲端確認（不依賴可能過期的本機快取）。讀不到時寧可不寄，避免重複。
+    const remote = await sync.fetchRemoteLastSentDate();
+    if (remote === null) {
+      console.warn("[Reminder Scheduler] 無法確認雲端寄信狀態，本輪跳過");
+      return;
+    }
+    if (remote === todayStr) {
+      localStorage.setItem(REMINDER_LAST_SENT_KEY, todayStr);
+      return;
+    }
+
+    // ✅ 先「佔位」(寫入雲端 lastSentDate) 再寄信，寫入失敗就不寄，確保不會重複
+    const claimed = await sync.writeRemoteLastSentDate(todayStr);
+    if (!claimed) {
+      console.warn("[Reminder Scheduler] 無法寫入雲端寄信記錄，放棄補寄以免重複");
+      return;
+    }
+    localStorage.setItem(REMINDER_LAST_SENT_KEY, todayStr);
+    const latest = store.getReminderSettings();
+    latest.lastSentDate = todayStr;
+    localStorage.setItem(STORAGE_KEYS.REMINDER_SETTINGS, JSON.stringify(latest));
+
+    console.log("[Reminder Scheduler] 伺服器逾時未寄出，瀏覽器補寄", todayStr);
+    triggerImmediateEmailDispatch();
+  } finally {
+    reminderCheckBusy = false;
   }
-
-  if (!shouldSendToday) return;
-
-  // Check if current time has reached or passed the scheduled time
-  if (currentHHMM < scheduledTime) return;
-
-  // ✅ 防重複寄信：同時檢查本機 localStorage 以及從 Firebase 同步來的 lastSentDate
-  const localLastSent  = localStorage.getItem(REMINDER_LAST_SENT_KEY) || "";
-  const remoteLastSent = settings.lastSentDate || "";
-  if (localLastSent === todayStr || remoteLastSent === todayStr) {
-    console.log("[Reminder Scheduler] Already sent today (local:", localLastSent, "/ remote:", remoteLastSent, "), skipping.");
-    return;
-  }
-
-  // All conditions met — fire the reminder!
-  console.log("[Reminder Scheduler] Firing auto reminder for", todayStr);
-
-  // ✅ Bug 1 修復：只更新 lastSentDate，不覆蓋整個 settings，避免 intervals.join() 崩潰
-  localStorage.setItem(REMINDER_LAST_SENT_KEY, todayStr);
-  const updatedSettings = Object.assign({}, settings, { lastSentDate: todayStr });
-  store.saveReminderSettingsSilent(updatedSettings);  // 使用不寫 audit log 的靜默版本
-
-  triggerImmediateEmailDispatch();
 }
 
 
